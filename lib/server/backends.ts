@@ -198,17 +198,6 @@ export async function usableBackends(): Promise<BackendView[]> {
   return all.filter((b) => isUsableHealth(b.health));
 }
 
-/**
- * Where a render should go, and nothing else.
- *
- * Falls back to the main url when renderUrl is unset, because a notebook
- * serves both from one tunnel. A backend that cannot render is skipped
- * entirely rather than being sent a request it will 404.
- */
-export async function resolveRenderBackend(): Promise<{ backend: BackendView; url: string } | null> {
-  return (await usableRenderBackends())[0] ?? null;
-}
-
 /** Every render-capable backend in the standard order. */
 export async function usableRenderBackends(): Promise<Array<{ backend: BackendView; url: string }>> {
   // Same standard order as TTS.

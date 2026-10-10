@@ -13,7 +13,6 @@ Contract
 GET    /health              -> {ok, provider, gpu, models[], voices_cached[], busy, version}
 PUT    /voices/{voice_id}   -> {audio_url, transcript, language} downloads + caches a reference
 POST   /generate            -> one chunk of speech; 409 voice_not_cached if unknown
-POST   /clone               -> legacy multipart clone (kept for the old studio path)
 POST   /jobs                -> 202, renders a whole script in a background worker
 GET    /jobs/{id}           -> status + per-item metadata (never the audio)
 GET    /jobs/{id}/audio/{n} -> one finished file, collected by the gateway
@@ -90,7 +89,7 @@ except ImportError:  # pragma: no cover - notebook layout
 import numpy as np
 import soundfile as sf
 import torch
-from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
@@ -333,8 +332,8 @@ def _grow_text_vocab(t3, state: Dict[str, Any]) -> None:
     engine fell back to Hindi and the output never changed.
 
     The extra ids are appended, so every existing token keeps its row and the
-    base tokenizer stays correct — the new rows are simply ones it will not
-    emit until the expanded tokenizer ships alongside the weights.
+    base tokenizer stays correct. The one new row is the "[ne]" language tag,
+    which _register_ne_tag adds to this model's tokenizer.
     """
     import torch.nn as nn  # noqa: PLC0415
 
@@ -1083,26 +1082,6 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"could not cache voice: {e}") from e
         return {"ok": True, "voice_id": voice_id, "duration": round(duration, 2)}
-
-    @app.post("/clone")
-    async def clone(
-        audio: UploadFile = File(...),
-        transcript: str = Form(""),
-        voice_id: str = Form(""),
-        x_backend_secret: Optional[str] = Header(None),
-    ) -> dict:
-        """Legacy path — kept so the pre-v2 studio flow keeps working."""
-        _check(x_backend_secret)
-        import uuid
-
-        vid = voice_id or uuid.uuid4().hex[:12]
-        path = os.path.join(VOICES_DIR, f"{vid}.wav")
-        data, sr = sf.read(io.BytesIO(await audio.read()))
-        if getattr(data, "ndim", 1) > 1:
-            data = data.mean(axis=1)
-        sf.write(path, data, sr)
-        VOICES[vid] = {"path": path, "transcript": transcript.strip(), "language": "en"}
-        return {"voice_id": vid, "duration": len(data) / sr}
 
     @app.post("/generate")
     async def generate(request: Request, x_backend_secret: Optional[str] = Header(None)):

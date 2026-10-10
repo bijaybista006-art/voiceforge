@@ -89,9 +89,7 @@ def api():
     import os
 
     os.environ.setdefault("VOICEFORGE_VOICES_DIR", VOICES_DIR)
-    # The Nepali engine. Ungated interim weights; the better final ones live
-    # in gated mirrors, so swap these two once access is granted and add an
-    # HF_TOKEN to the voiceforge-backend secret.
+    # The Nepali engine: the finished epoch-50 weights, from an ungated repo.
     os.environ.setdefault("VOICEFORGE_NE_MODEL", "Firoj112/chatterbox-nepali-runs")
     os.environ.setdefault("VOICEFORGE_NE_FILE", "t3_mtl_nepali_final.safetensors")
 

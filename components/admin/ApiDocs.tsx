@@ -385,16 +385,14 @@ export function ApiDocs({ appUrl }: { appUrl: string }) {
 
         <p className="mt-4 mb-2 font-medium text-ink">Nepali, honestly</p>
         <p className="mb-3">
-          There is no settled public Nepali Chatterbox checkpoint, so the{" "}
-          <code className="font-mono text-[12px]">chatterbox-ne</code> engine is wired but{" "}
-          <strong>unconfigured by default</strong>. Until a model is pointed at it, every Nepali
-          job falls back to Hindi — which shares the script — at a slower, flatter setting
-          (<code className="font-mono text-[12px]">cfg 0.3</code>,{" "}
-          <code className="font-mono text-[12px]">exaggeration 0.4</code>), because Nepali read
-          with Hindi prosody otherwise rushes. Set{" "}
-          <code className="font-mono text-[12px]">VOICEFORGE_NE_MODEL</code> on the backend to a
-          HuggingFace repo or local path and the primary engine starts being used. A model that
-          will not load logs a warning and falls back rather than failing the job.
+          Nepali runs on its own fine-tuned checkpoint, the{" "}
+          <code className="font-mono text-[12px]">chatterbox-ne</code> engine, which each backend
+          loads the first time a Nepali request arrives. English words inside Nepali text are
+          respelled in Devanagari first, so one model reads each sentence whole; send{" "}
+          <code className="font-mono text-[12px]">lexicon</code> to supply your own spellings. If
+          the checkpoint cannot be loaded the job falls back to Hindi, which shares the script,
+          and says so in <code className="font-mono text-[12px]">engine_used</code> rather than
+          failing.
         </p>
 
         <p className="mt-4 mb-2 font-medium text-ink">Which engine ran</p>

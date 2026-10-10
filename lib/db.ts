@@ -106,26 +106,6 @@ function getDb(): Promise<IDBPDatabase<VoiceForgeDB>> {
 }
 
 // ---------------------------------------------------------------------------
-// voices
-// ---------------------------------------------------------------------------
-
-export async function getAllVoices(): Promise<Voice[]> {
-  const db = await getDb();
-  const voices = await db.getAll("voices");
-  return voices.sort((a, b) => b.createdAt - a.createdAt);
-}
-
-export async function putVoice(voice: Voice): Promise<void> {
-  const db = await getDb();
-  await db.put("voices", voice);
-}
-
-export async function deleteVoice(id: string): Promise<void> {
-  const db = await getDb();
-  await db.delete("voices", id);
-}
-
-// ---------------------------------------------------------------------------
 // projects
 // ---------------------------------------------------------------------------
 
@@ -143,12 +123,6 @@ export async function getFirstProject(): Promise<Project | undefined> {
   const db = await getDb();
   const all = await db.getAll("projects");
   return all.sort((a, b) => b.updatedAt - a.updatedAt)[0];
-}
-
-export async function deleteProject(id: string): Promise<void> {
-  const db = await getDb();
-  await db.delete("projects", id);
-  await clearProjectAudio(id);
 }
 
 // ---------------------------------------------------------------------------
@@ -171,14 +145,6 @@ export async function saveChunkAudio(
     durationSec,
     sampleRate,
   });
-}
-
-export async function loadChunkAudio(
-  projectId: string,
-  chunkId: string
-): Promise<StoredChunkAudio | undefined> {
-  const db = await getDb();
-  return db.get("chunkAudio", `${projectId}:${chunkId}`);
 }
 
 /** All stored audio for a project, keyed by chunkId. */

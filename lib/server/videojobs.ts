@@ -333,7 +333,3 @@ export async function reconcileRender(job: Job): Promise<Job> {
     return job;
   }
 }
-
-export async function getVideoJob(id: string): Promise<Job | null> {
-  return kvGet<Job>(KEY(id));
-}

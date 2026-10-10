@@ -809,7 +809,7 @@ modal token new</code></pre></div>
     <li><strong>Colab free gives a few hours per session</strong> and has a daily cap. Plenty for a video or two a day; not enough to run a service on.</li>
     <li><strong>The Colab/Kaggle tab must stay open</strong> while you generate. Modal is the only unattended option.</li>
     <li><strong>Generation is sequential</strong> — one chunk at a time, because it's one GPU. Two jobs queue behind each other.</li>
-    <li><strong>Nepali isn't supported by the model.</strong> The backend runs Chatterbox Multilingual: 23 languages including English and Hindi. Hindi is the closest option.</li>
+    <li><strong>Nepali uses its own model.</strong> The base Chatterbox Multilingual model covers 23 languages and Nepali is not one of them, so Nepali runs on a separate fine-tuned checkpoint that loads the first time you use it. The first Nepali request on a fresh backend is slow while it downloads.</li>
     <li><strong>Number expansion is English-only.</strong> “15GB” becomes “fifteen gigabytes” in English scripts; other languages keep the digits for the model to read in-language.</li>
     <li><strong>Generated audio is deleted</strong> after the retention window in Settings — 7 days by default. Download anything you want to keep.</li>
     <li><strong>Your voice sample</strong> goes from your browser to <em>your</em> Blob store and from there to <em>your</em> GPU. Not to Anthropic, not to any TTS company.</li>

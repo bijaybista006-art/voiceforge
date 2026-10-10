@@ -89,8 +89,6 @@ export const MODEL_INFO: Record<ModelId, { name: string; blurb: string }> = {
   },
 };
 
-export const COLAB_NOTEBOOK_PATH = "colab/voiceforge_server.ipynb";
-
 // ---------------------------------------------------------------------------
 // Talking-head render budgeting
 // ---------------------------------------------------------------------------
