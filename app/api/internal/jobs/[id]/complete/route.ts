@@ -34,6 +34,8 @@ const schema = z.object({
    * faithfully all the way to here and then vanished.
    */
   engine_used: z.string().max(60).optional(),
+  /** What each chunk did on the GPU: model, tag, lengths, what stopped it. */
+  diagnostics: z.record(z.unknown()).optional(),
   /** Expressive narration: what was applied, and per-sentence detail. */
   params_used: z.record(z.unknown()).optional(),
   segments: z.array(z.record(z.unknown())).max(5000).optional(),

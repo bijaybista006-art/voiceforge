@@ -978,7 +978,7 @@ def _run_job(job: Dict[str, Any]) -> None:
         if diag:
             # What each chunk actually did, carried in the result so a short
             # or silent render can be read off the job instead of the logs.
-            result["params_used"] = {
+            result["diagnostics"] = {
                 "build": {
                     "repeat_rule_patched": REPEAT_LIMIT > 0 and _stream_patch_applied(),
                     "repeat_limit": REPEAT_LIMIT,

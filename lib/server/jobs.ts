@@ -85,6 +85,8 @@ export interface Job {
    * than something you only notice by ear.
    */
   engineUsed?: string;
+  /** Per-chunk facts from the backend, for diagnosing a bad render. */
+  diagnostics?: Record<string, unknown>;
   /** 0-100 while rendering, so a long job isn't a black box. */
   progress?: number;
   stage?: string;
@@ -476,6 +478,7 @@ export interface BackendResult {
   status: string;
   /** Which engine the backend actually ran, after any fallback. */
   engine_used?: string;
+  diagnostics?: Record<string, unknown>;
   mode?: JobMode;
   format?: "mp3" | "wav";
   duration?: number;
@@ -573,6 +576,7 @@ async function collectLocked(job: Job, result: BackendResult): Promise<Job> {
     duration: result.duration,
     genSeconds: result.gen_seconds,
     engineUsed: result.engine_used,
+    ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
     ...(result.params_used ? { paramsUsed: result.params_used } : {}),
     ...(result.segments ? { segments: result.segments } : {}),
     items,

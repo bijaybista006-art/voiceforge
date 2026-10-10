@@ -49,6 +49,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     ...(job.videoUrl ? { video_url: job.videoUrl, bytes: job.videoBytes } : {}),
     ...(job.timeline ? { timeline: job.timeline } : {}),
     ...(job.engineUsed ? { engine_used: job.engineUsed } : {}),
+    ...(job.diagnostics ? { diagnostics: job.diagnostics } : {}),
     ...(job.paramsUsed ? { params_used: job.paramsUsed } : {}),
     ...(job.segments ? { segments: job.segments } : {}),
     ...(job.progress !== undefined ? { progress: job.progress, stage: job.stage } : {}),
