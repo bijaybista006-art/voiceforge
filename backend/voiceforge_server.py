@@ -193,6 +193,19 @@ def _patch_stream_analyzer() -> None:
         print(f"[engine] repetition rule: left as shipped ({e})", flush=True)
 
 
+# The facts about the most recent take, for the job result.
+_LAST_GEN: Dict[str, Any] = {}
+
+
+def _stream_patch_applied() -> bool:
+    try:
+        from chatterbox.models.t3.inference import alignment_stream_analyzer as asa
+
+        return bool(getattr(asa.AlignmentStreamAnalyzer, "_vf_patched", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def load_models(load_qwen: bool = False) -> List[str]:
     """Load Chatterbox Multilingual (23 languages, incl. English and Hindi)."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -560,6 +573,19 @@ def _generate_chunk(
         # One line per take. Without it a bad render can only be described,
         # never diagnosed: this says which model and tag ran, how much audio
         # came back for how much text, and whether a check cut it short.
+        _LAST_GEN.clear()
+        _LAST_GEN.update(
+            {
+                "model": model,
+                "tag": language,
+                "chars": len(text),
+                "audio": round(len(audio) / max(1, sr), 2),
+                "stop": _LAST_STOP["why"] or "natural",
+                "exaggeration": float(exaggeration),
+                "cfg": float(cfg),
+                "temperature": float(temperature),
+            }
+        )
         print(
             f"[gen] model={model} tag={language} chars={len(text)} "
             f"audio={len(audio) / max(1, sr):.2f}s "
@@ -892,6 +918,7 @@ def _run_job(job: Dict[str, Any]) -> None:
             else:
                 chunks = [c for ch in chunks for c in ne_prepare(ch)] or chunks
 
+        diag: List[Dict[str, Any]] = []
         with _GPU_LOCK:
             _BUSY = True
             for i, text in enumerate(chunks if not rendered else []):
@@ -907,6 +934,7 @@ def _run_job(job: Dict[str, Any]) -> None:
                     engine=plan["engine"],
                 )
                 rendered.append(audio)
+                diag.append(dict(_LAST_GEN))
                 with _JOB_LOCK:
                     JOBS[job_id]["progress"] = round((i + 1) / max(1, len(chunks)) * 100)
             _BUSY = False
@@ -947,6 +975,17 @@ def _run_job(job: Dict[str, Any]) -> None:
             "engine_used": plan["engine_used"],
             "items": items,
         }
+        if diag:
+            # What each chunk actually did, carried in the result so a short
+            # or silent render can be read off the job instead of the logs.
+            result["params_used"] = {
+                "build": {
+                    "repeat_rule_patched": REPEAT_LIMIT > 0 and _stream_patch_applied(),
+                    "repeat_limit": REPEAT_LIMIT,
+                    "ne_tag": _NE_TAG["id"],
+                },
+                "chunks": diag[:200],
+            }
         if expressive_meta:
             result["params_used"] = expressive_meta.get("params_used")
             if expressive_meta.get("segments"):
