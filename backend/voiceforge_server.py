@@ -218,10 +218,24 @@ def _stitch(parts: List[np.ndarray], sr: int, paragraph_breaks: List[bool]) -> n
 # gated mirrors hold the same final file; HF_TOKEN is only needed for those.
 NE_MODEL = os.environ.get("VOICEFORGE_NE_MODEL", "").strip()
 NE_FILE = os.environ.get("VOICEFORGE_NE_FILE", "t3_mtl_nepali_final.safetensors").strip()
-# The language token handed to the library when the Nepali engine runs. The
-# fine-tune is Devanagari and the library has no "ne", so "hi" selects the
-# right conditioning; the Nepali pronunciation comes from the T3 weights.
-NE_LANGUAGE_ID = os.environ.get("VOICEFORGE_NE_LANG_ID", "hi").strip() or "hi"
+# The language tag the Nepali engine is called with.
+#
+# The checkpoint was trained with its own tag, "[ne]", which the authors
+# registered as text token 2454 — the one extra row that makes its vocabulary
+# 2455. Their instructions are explicit that language_id="ne" must be set.
+# This used to send "hi" instead, on the theory that the tag only selected
+# conditioning. It does far more than that: the tag is the first token of
+# every sentence the model was trained on, and fifty epochs moved "[ne]" a
+# long way from the Hindi row it was copied from. Fed "[hi]", the fine-tuned
+# model sees text unlike anything in its training and stops within a token
+# or two, which is where the near-empty Nepali files came from.
+#
+# "ne" is therefore the default, and _register_ne_tag makes the stock library
+# accept it. Set VOICEFORGE_NE_LANG_ID=hi to get the old behaviour back.
+NE_LANGUAGE_ID = os.environ.get("VOICEFORGE_NE_LANG_ID", "ne").strip() or "ne"
+# What is actually passed at generation time: NE_LANGUAGE_ID once the tag is
+# registered on the loaded model, "hi" if that could not be done.
+_NE_TAG = {"id": "hi"}
 
 # Engines that failed to load once. Retrying a missing download on every chunk
 # of a 100-scene job would add minutes and change nothing.
@@ -277,6 +291,44 @@ def _grow_text_vocab(t3, state: Dict[str, Any]) -> None:
         t3.text_head = new_head
 
     print(f"[engine] nepali T3: grew text vocabulary {have} -> {want}", flush=True)
+
+
+def _register_ne_tag(model, want_rows: Optional[int]) -> str:
+    """Teach this model instance the "[ne]" tag; return the tag to call it with.
+
+    Two things stand between the stock library and language_id="ne": its
+    tokenizer has no "[ne]" token, and generate() refuses any language outside
+    its own list. Both are fixed here, for the Nepali instance only — the base
+    model has its own tokenizer object and never sees the tag.
+
+    The token must land on the exact row the checkpoint trained, the last one.
+    If it lands anywhere else the tag would index the wrong embedding, so that
+    case falls back to "hi" loudly rather than guessing.
+    """
+    if NE_LANGUAGE_ID != "ne":
+        print(f"[engine] nepali tag: using '{NE_LANGUAGE_ID}' (set by VOICEFORGE_NE_LANG_ID)", flush=True)
+        return NE_LANGUAGE_ID
+    try:
+        tok = model.tokenizer.tokenizer
+        if tok.token_to_id("[ne]") is None:
+            tok.add_special_tokens(["[ne]"])
+        got = tok.token_to_id("[ne]")
+        rows = int(model.t3.text_emb.weight.shape[0])
+        expected = (want_rows or rows) - 1
+        if got != expected or got >= rows:
+            raise RuntimeError(f"[ne] landed on id {got}, checkpoint expects {expected}")
+
+        import chatterbox.mtl_tts as _mtl  # noqa: PLC0415
+
+        _mtl.SUPPORTED_LANGUAGES.setdefault("ne", "Nepali")
+        ids = model.tokenizer.encode("नमस्ते", language_id="ne")
+        if not ids or ids[0] != got:
+            raise RuntimeError(f"tokenizer did not emit [ne] first (got {ids[:3]})")
+        print(f"[engine] nepali tag: [ne] registered as text token {got}", flush=True)
+        return "ne"
+    except Exception as e:  # noqa: BLE001
+        print(f"[engine] nepali tag: could not register [ne] ({e}); falling back to [hi]", flush=True)
+        return "hi"
 
 
 def _load_ne_model():
@@ -336,6 +388,9 @@ def _load_ne_model():
         raise RuntimeError(
             f"{NE_FILE} matched no T3 parameters — wrong file or wrong architecture"
         )
+
+    want = state.get("text_emb.weight")
+    _NE_TAG["id"] = _register_ne_tag(model, int(want.shape[0]) if want is not None else None)
 
     # No model.to(device) here: ChatterboxMultilingualTTS is a wrapper, not an
     # nn.Module, so it has no .to(). from_pretrained already placed it, and the
@@ -414,12 +469,8 @@ def _generate_chunk(
     # call itself is identical, which is why nothing else here changes.
     if engine == "chatterbox-ne" and "chatterbox-ne" in MODELS:
         model = "chatterbox-ne"
-        # The library validates language_id against its own 23-language list,
-        # which has no "ne", and refuses the call outright. The Nepali-ness is
-        # in the fine-tuned T3 weights, not in this token — it only selects
-        # conditioning — so the Devanagari language the library does accept is
-        # what gets passed. The weights still produce Nepali.
-        language = NE_LANGUAGE_ID
+        # The tag the checkpoint was trained with — see NE_LANGUAGE_ID.
+        language = _NE_TAG["id"]
 
     if model in ("chatterbox", "chatterbox-ne"):
         import inspect

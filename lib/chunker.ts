@@ -179,6 +179,9 @@ export function chunkScript(
   opts: NormalizeOptions = {}
 ): ChunkDraft[] {
   const drafts: ChunkDraft[] = [];
+  // The Nepali checkpoint's authors put its limit at 200 characters; past
+  // that it loses its place in the text. Every other language is unchanged.
+  if (language === "ne") max = Math.min(max, 200);
   const text = raw.replace(/\r\n?/g, "\n");
 
   // forced chunk breaks
