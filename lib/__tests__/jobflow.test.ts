@@ -590,18 +590,8 @@ describe("expressive narration: linked voices travel with the job", () => {
     expect(sent.params.prosody_tags).toBe(true);
   });
 
-  it("sends them for Nepali by default, since the backend code-switches by itself", async () => {
+  it("sends no refs to a request that did not opt in", async () => {
     const sent = await sentBody({ language: "ne" });
-    expect(Object.keys(sent.voice_refs)).toEqual(["en"]);
-  });
-
-  it("sends no refs when Nepali explicitly turned code-switching off", async () => {
-    const sent = await sentBody({ language: "ne", code_switch: false });
-    expect(sent.voice_refs).toBeUndefined();
-  });
-
-  it("sends no refs for any other language", async () => {
-    const sent = await sentBody({ language: "en" });
     expect(sent.voice_refs).toBeUndefined();
   });
 });

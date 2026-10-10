@@ -161,28 +161,3 @@ class TestStripStatePrefixes:
 
     def test_strips_nested_wrappers_in_turn(self):
         assert strip_state_prefixes({"module.t3.w": 1}) == {"w": 1}
-
-
-class TestAutoCodeSwitch:
-    def test_mixed_nepali_turns_it_on(self):
-        from backend.voiceforge_lang import auto_code_switch
-
-        out = auto_code_switch({"language": "ne"}, ["मेरो laptop को password"])
-        assert out["code_switch"] is True
-
-    def test_pure_nepali_is_untouched(self):
-        from backend.voiceforge_lang import auto_code_switch
-
-        params = {"language": "ne"}
-        assert auto_code_switch(params, ["नमस्ते सबैलाई"]) is params
-
-    def test_an_english_only_line_also_switches(self):
-        from backend.voiceforge_lang import auto_code_switch
-
-        assert auto_code_switch({}, ["नमस्ते", "Thank you!"])["code_switch"] is True
-
-    def test_an_explicit_choice_wins(self):
-        from backend.voiceforge_lang import auto_code_switch
-
-        off = {"code_switch": False}
-        assert auto_code_switch(off, ["मेरो laptop"]) is off

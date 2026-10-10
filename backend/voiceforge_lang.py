@@ -621,24 +621,3 @@ def wants_expressive(params: Dict[str, Any]) -> bool:
     except (TypeError, ValueError):
         speed_set = False
     return on(params.get("code_switch")) or on(params.get("prosody_tags")) or speed_set
-
-
-def auto_code_switch(params: Dict[str, Any], texts: List[str]) -> Dict[str, Any]:
-    """Turn code-switching on for Nepali text that carries English words.
-
-    The Nepali checkpoint was trained on Devanagari. Handed "मेरो laptop को
-    password", it voices the Nepali and leaves a gap, a mumble or an invented
-    word where the English was — which is what a mixed script sounded like
-    whenever the caller had not thought to ask for code_switch. Mixed text is
-    the normal way Nepali is written about technology, so it is detected here
-    instead of being left to a flag.
-
-    An explicit code_switch, true or false, is always respected.
-    """
-    if params.get("code_switch") is not None:
-        return params
-    mixed = any(_LATIN.search(t or "") and _DEVA.search(t or "") for t in texts)
-    latin_only = any(_LATIN.search(t or "") and not _DEVA.search(t or "") for t in texts)
-    if not (mixed or latin_only):
-        return params
-    return {**params, "code_switch": True}

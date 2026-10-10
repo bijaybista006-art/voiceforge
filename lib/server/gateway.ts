@@ -12,9 +12,10 @@
  */
 
 import { languageForText, resolveSynthesis } from "@/lib/languageProfiles";
+import { transliterateForNepali } from "@/lib/nepaliLoanwords";
 import type { LibraryVoice, ModelId } from "@/lib/types";
 import { backendHeaders, recordJobUsage, resolveBackend, updateBackend } from "./backends";
-import { getVoice, resolveVoice } from "./voices";
+import { resolveVoice } from "./voices";
 
 /** Vercel caps a function at 60 s; stay inside it with room to answer. */
 const GENERATE_TIMEOUT_MS = 52_000;
@@ -138,29 +139,15 @@ export async function gatewayGenerate(
     },
   });
 
-  // Mixed Nepali and English is spoken by two models in one voice. The
-  // English half sounds right only with the linked English clip, so it goes
-  // along whenever the Nepali engine is in play.
-  const voiceRefs: Record<string, unknown> = {};
-  if (synth.engine === "chatterbox-ne") {
-    for (const [slot, refId] of Object.entries(voice.refs ?? {})) {
-      if (!refId || refId === voice.id) continue;
-      const ref = await getVoice(refId);
-      if (ref) {
-        voiceRefs[slot] = {
-          voice_id: ref.id,
-          audio_url: ref.audioUrl,
-          transcript: ref.transcript,
-          language: ref.language,
-        };
-      }
-    }
-  }
+  // English words inside a Nepali line are respelled in Devanagari, so one
+  // model reads the whole sentence once. See lib/nepaliLoanwords.ts for why
+  // this replaced splicing two models together.
+  const text =
+    synth.modelLanguage === "ne" ? transliterateForNepali(input.text) : input.text;
 
   const payload = {
-    text: input.text,
+    text,
     voice_id: voice.id,
-    ...(Object.keys(voiceRefs).length ? { voice_refs: voiceRefs } : {}),
     model: input.model ?? "chatterbox",
     seed: input.seed ?? 0,
     language: synth.modelLanguage,

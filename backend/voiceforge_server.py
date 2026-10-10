@@ -62,7 +62,6 @@ try:
         transliterate_latin,
         trim_speech,
         wants_expressive,
-        auto_code_switch,
     )
 except ImportError:  # pragma: no cover - notebook layout
     from voiceforge_lang import (
@@ -86,7 +85,6 @@ except ImportError:  # pragma: no cover - notebook layout
         transliterate_latin,
         trim_speech,
         wants_expressive,
-        auto_code_switch,
     )
 
 import numpy as np
@@ -732,10 +730,6 @@ def _run_job(job: Dict[str, Any]) -> None:
             print(f"[job] {job_id} engine={plan['engine']} lang={plan['language']} used={plan['engine_used']}", flush=True)
 
         is_ne = str(params.get("language", "")).lower() == "ne" or plan["engine"] == "chatterbox-ne"
-        if is_ne:
-            # English words inside Nepali text need the English model; see
-            # auto_code_switch for why this is not left to the caller.
-            params = auto_code_switch(params, chunks)
 
         # Expressive Nepali (opt-in): tone tags, Nepali + English
         # code-switching, tail trimming and speed. Any failure falls back to
@@ -951,28 +945,6 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
             # sent language "ne" to a model that has no such language and got
             # a hard 500, while the identical text through a job spoke Nepali.
             plan = resolve_engine(p.get("engine"), p.get("fallback"), p)
-            is_ne = str(p.get("language", "")).lower() == "ne" or plan["engine"] == "chatterbox-ne"
-            mixed = auto_code_switch(p, [p["text"]]) if is_ne else p
-            if is_ne and _flag(mixed.get("code_switch")):
-                # Same treatment a job gets: Nepali runs on the Nepali model,
-                # English words on the English one, spliced in one voice.
-                t0 = time.time()
-                with _GPU_LOCK:
-                    _BUSY = True
-                    parts, sr, _meta = _render_expressive(
-                        {"voice_id": p["voice_id"], "voice_refs": p.get("voice_refs") or {}},
-                        [p["text"]],
-                        plan,
-                        mixed,
-                    )
-                    _BUSY = False
-                audio = parts[0]
-                return {
-                    "audio_b64": _wav_b64(audio, sr),
-                    "sample_rate": sr,
-                    "duration": round(len(audio) / sr, 2),
-                    "gen_seconds": round(time.time() - t0, 2),
-                }
             with _GPU_LOCK:
                 _BUSY = True
                 audio, sr, gen_seconds = _generate_chunk(

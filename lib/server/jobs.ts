@@ -19,6 +19,7 @@
 
 import { after } from "next/server";
 import { resolveSynthesis } from "@/lib/languageProfiles";
+import { transliterateForNepali } from "@/lib/nepaliLoanwords";
 import type { BackendProvider, LibraryVoice, VideoChapterSpan } from "@/lib/types";
 import {
   backendHeaders,
@@ -330,13 +331,7 @@ export async function createAndDispatchJob(
 
   // Linked voices (English / tone references) travel with the job only when
   // the request opted into expressive narration — nobody else pays for them.
-  // Nepali counts as opting in unless it said no: the backend switches models
-  // for English words by itself, and needs the English reference to do it in
-  // the right accent.
-  const wantsRefs =
-    p.code_switch === true ||
-    p.prosody_tags === true ||
-    (synth.engine === "chatterbox-ne" && p.code_switch !== false);
+  const wantsRefs = p.code_switch === true || p.prosody_tags === true;
   const voiceRefs = wantsRefs ? await resolveVoiceRefs(voice) : undefined;
 
   const body = {
@@ -359,7 +354,16 @@ export async function createAndDispatchJob(
           language: voice.language,
         }
       : undefined,
-    chunks: input.chunks,
+    // English words inside Nepali text are respelled in Devanagari so one
+    // model reads each sentence whole. A request that explicitly asked for
+    // code_switch keeps its Latin: that path voices English with the English
+    // model, and needs to see it.
+    chunks:
+      synth.modelLanguage === "ne" && p.code_switch !== true
+        ? input.chunks.map((c) =>
+            transliterateForNepali(c, p.lexicon as Record<string, string> | undefined)
+          )
+        : input.chunks,
     paragraph_breaks: input.paragraphBreaks,
     params: {
       ...input.params,
