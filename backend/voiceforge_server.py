@@ -126,10 +126,79 @@ _BUSY = False
 # model loading
 # ---------------------------------------------------------------------------
 
+# How many times in a row the model may emit the same speech token before it
+# is treated as stuck. 0 leaves the library's own rule in place.
+REPEAT_LIMIT = int(os.environ.get("VOICEFORGE_REPEAT_LIMIT", "25") or 0)
+# Why the last generation was cut short, if it was. Read by the [gen] log line.
+_LAST_STOP = {"why": ""}
+
+
+def _patch_stream_analyzer() -> None:
+    """Stop the library ending a take the moment two speech tokens match.
+
+    chatterbox's multilingual path runs an integrity check on every step, and
+    one of its rules forces end-of-speech as soon as the last two tokens are
+    identical. Its own comment calls that "3x same token in a row"; the code
+    checks two. A speech token is 40 ms, and silence, a held vowel or the
+    breath before a sentence are all the same token repeated — so the rule
+    fires on ordinary speech.
+
+    It is why a chunk could come back as a few words and then nothing, and why
+    the Nepali checkpoint, which opens every sentence on two matching tokens,
+    returned exactly 0.08 s: two tokens, then a forced stop.
+
+    The rule is replaced, not removed: REPEAT_LIMIT identical tokens (one
+    second at the default) still ends the take, which is what the check was
+    for. Its other two rules — a tail that runs on after the text is finished,
+    and text being read twice — are left exactly as they were.
+    """
+    if REPEAT_LIMIT <= 0:
+        return
+    try:
+        import logging
+
+        from chatterbox.models.t3.inference import alignment_stream_analyzer as asa
+
+        cls = asa.AlignmentStreamAnalyzer
+        if getattr(cls, "_vf_patched", False):
+            return
+        original = cls.step
+
+        def step(self, logits, next_token=None):
+            run = getattr(self, "_vf_run", 0)
+            if next_token is not None:
+                tok = int(next_token.view(-1)[0].item()) if torch.is_tensor(next_token) else int(next_token)
+                run = run + 1 if tok == getattr(self, "_vf_last", None) else 1
+                self._vf_last, self._vf_run = tok, run
+            # next_token=None keeps the library's own two-token rule dormant;
+            # everything else in its step still runs.
+            out = original(self, logits, next_token=None)
+            if run >= REPEAT_LIMIT:
+                _LAST_STOP["why"] = f"same token x{run}"
+                out = -(2 ** 15) * torch.ones_like(out)
+                out[..., self.eos_idx] = 2 ** 15
+            return out
+
+        class _Capture(logging.Handler):
+            def emit(self, record):  # noqa: D401
+                msg = record.getMessage()
+                if "forcing EOS" in msg:
+                    _LAST_STOP["why"] = msg.replace("forcing EOS token, ", "")[:120]
+
+        asa.logger.addHandler(_Capture())
+        cls.step = step
+        cls._vf_patched = True
+        print(f"[engine] repetition rule: two-token stop replaced (limit {REPEAT_LIMIT})", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[engine] repetition rule: left as shipped ({e})", flush=True)
+
+
 def load_models(load_qwen: bool = False) -> List[str]:
     """Load Chatterbox Multilingual (23 languages, incl. English and Hindi)."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+
+    _patch_stream_analyzer()
 
     MODELS["chatterbox"] = ChatterboxMultilingualTTS.from_pretrained(device=device)
     print("chatterbox (multilingual) ready", flush=True)
@@ -484,9 +553,19 @@ def _generate_chunk(
         }
         accepted = inspect.signature(MODELS[model].generate).parameters
         kwargs = {k: v for k, v in kwargs.items() if k in accepted}
+        _LAST_STOP["why"] = ""
         wav = MODELS[model].generate(text, **kwargs)
         audio = wav.squeeze(0).cpu().numpy()
         sr = MODELS[model].sr
+        # One line per take. Without it a bad render can only be described,
+        # never diagnosed: this says which model and tag ran, how much audio
+        # came back for how much text, and whether a check cut it short.
+        print(
+            f"[gen] model={model} tag={language} chars={len(text)} "
+            f"audio={len(audio) / max(1, sr):.2f}s "
+            f"stop={_LAST_STOP['why'] or 'natural'}",
+            flush=True,
+        )
     else:
         wavs, out_sr = MODELS["qwen3"].generate_voice_clone(
             text=text, language="English", ref_audio=ref["path"], ref_text=ref.get("transcript") or None
