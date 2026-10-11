@@ -58,6 +58,20 @@ export function presenterCandidateUrl(apiUrl: string, selfRegistered = false): s
 }
 
 /**
+ * A notebook's own account of its engine install, as one line for the
+ * Presenters page. Empty once the engine is ready — there is nothing to say.
+ */
+export function installNote(
+  install?: { state?: string; stage?: string; error?: string } | null
+): string | undefined {
+  if (!install?.state || install.state === "ready" || install.state === "idle") return undefined;
+  if (install.state === "failed") {
+    return `its engine failed to install: ${(install.error ?? "no reason given").slice(0, 300)}`;
+  }
+  return `it is still installing its engine (${install.stage || "starting"})`;
+}
+
+/**
  * How long an "I can't do that yet" answer is believed. A notebook installs
  * its engine in the background for several minutes after it starts, so "no"
  * is asked again; "yes" is kept for the life of that address.
@@ -111,9 +125,17 @@ export async function discoverPresenter(
       await updateBackend(provider, { ...asked, presenterCapabilities: [] });
       return [];
     }
-    const health = (await res.json()) as { capabilities?: string[] };
+    const health = (await res.json()) as {
+      capabilities?: string[];
+      install?: { state?: string; stage?: string; error?: string };
+    };
     const caps = (health.capabilities ?? []).filter((c) => c.startsWith("presenter-"));
-    await updateBackend(provider, { ...asked, presenterUrl: candidate, presenterCapabilities: caps });
+    await updateBackend(provider, {
+      ...asked,
+      presenterUrl: candidate,
+      presenterCapabilities: caps,
+      presenterNote: installNote(health.install),
+    });
     return caps;
   } catch {
     // Asleep, not deployed, or slow to wake. Keep whatever was known.

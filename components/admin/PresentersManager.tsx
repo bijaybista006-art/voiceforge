@@ -22,6 +22,7 @@ interface Readiness {
   ready: boolean;
   provider?: string;
   reason?: string;
+  also?: string;
 }
 
 interface Payload {
@@ -251,6 +252,9 @@ function ReadinessCard({ readiness }: { readiness: Record<PresenterKind, Readine
                 <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted">
                   {r.ready ? KIND_HELP[kind].how : r.reason}
                 </p>
+                {r.ready && r.also ? (
+                  <p className="mt-1 text-[12.5px] leading-relaxed text-live">Meanwhile — {r.also}.</p>
+                ) : null}
               </div>
             </div>
           );

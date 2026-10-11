@@ -143,6 +143,7 @@ export async function registerBackend(
           ...(existing.presenterProbedUrl
             ? { presenterProbedUrl: existing.presenterProbedUrl }
             : {}),
+          ...(existing.presenterNote ? { presenterNote: existing.presenterNote } : {}),
         }
       : {}),
     registeredAt: existing?.registeredAt ?? now,

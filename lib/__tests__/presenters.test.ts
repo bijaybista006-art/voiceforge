@@ -14,6 +14,7 @@ import {
   slugifyPresenterName,
 } from "../server/presenters";
 import {
+  installNote,
   presenterCandidateUrl,
   presenterUrlOf,
   shouldProbePresenter,
@@ -310,6 +311,36 @@ describe("finding a notebook's presenter service", () => {
   it("never asks a hand-added address that has no presenter service to find", () => {
     expect(shouldProbePresenter({ url: "https://my.server.example", selfRegistered: false })).toBe(
       false
+    );
+  });
+});
+
+describe("what a notebook says about its engine install", () => {
+  it("is silent once the engine is ready", () => {
+    expect(installNote({ state: "ready", stage: "ready" })).toBeUndefined();
+    expect(installNote(undefined)).toBeUndefined();
+  });
+
+  it("names the step it is on while installing", () => {
+    expect(installNote({ state: "installing", stage: "downloading the weights" })).toBe(
+      "it is still installing its engine (downloading the weights)"
+    );
+  });
+
+  it("carries the reason when the install failed", () => {
+    expect(installNote({ state: "failed", error: "no space left on device" })).toMatch(
+      /failed to install: no space left on device/
+    );
+  });
+
+  it("is shown on the Presenters page instead of a bare 'not yet'", () => {
+    const kaggle = backend("kaggle", {
+      presenterNote: "it is still installing its engine (downloading the weights)",
+    });
+    const r = presenterReadiness([kaggle], "recording");
+    expect(r.ready).toBe(false);
+    expect(r.reason).toBe(
+      "Not ready yet — kaggle: it is still installing its engine (downloading the weights)."
     );
   });
 });

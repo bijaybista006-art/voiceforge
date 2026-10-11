@@ -201,6 +201,8 @@ export interface PresenterReadiness {
   provider?: string;
   /** Why not, phrased as the next thing to do. */
   reason?: string;
+  /** While ready: what other backends are still doing, e.g. installing. */
+  also?: string;
 }
 
 /**
@@ -214,13 +216,32 @@ export function presenterReadiness(
   kind: PresenterKind
 ): PresenterReadiness {
   const usable = pickPresenterBackends(backends, kind);
-  if (usable.length) return { ready: true, provider: usable[0].provider };
+  if (usable.length) {
+    // Ready somewhere — but a notebook earlier in the order may still be
+    // installing, which explains why a paid backend is the one answering.
+    const waiting = backends
+      .filter((b) => b.presenterNote && isUsableHealth(b.health) && !usable.includes(b))
+      .map((b) => `${b.provider}: ${b.presenterNote}`);
+    return {
+      ready: true,
+      provider: usable[0].provider,
+      ...(kind === "recording" && waiting.length ? { also: waiting.join("; ") } : {}),
+    };
+  }
 
   const need = presenterCapability(kind);
   const capable = backends.filter((b) => canPresent(b, need));
   const what = kind === "recording" ? "re-lip a recording" : "animate a still image";
 
   if (!capable.length) {
+    // A notebook that is part-way through installing, or whose install
+    // failed, says so. That is far more useful than "not yet".
+    const notes = backends
+      .filter((b) => b.presenterNote && isUsableHealth(b.health))
+      .map((b) => `${b.provider}: ${b.presenterNote}`);
+    if (kind === "recording" && notes.length) {
+      return { ready: false, reason: `Not ready yet — ${notes.join("; ")}.` };
+    }
     return {
       ready: false,
       reason: `No connected backend can ${what} yet. A backend offers this once its presenter engine is installed.`,

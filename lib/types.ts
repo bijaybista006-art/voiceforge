@@ -138,6 +138,8 @@ export interface BackendRegistration {
   /** When the presenter address was last asked, and which address that was. */
   presenterProbedAt?: number;
   presenterProbedUrl?: string;
+  /** What the presenter address said about its engine install, if anything. */
+  presenterNote?: string;
 }
 
 /** A row in the registry, as stored. */
