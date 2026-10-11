@@ -10,7 +10,10 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+import pytest  # noqa: E402
+
 from backend.voiceforge_lang import (  # noqa: E402
+    EngineUnavailable,
     DEFAULT_ENGINE,
     ne_chunks,
     ne_merge_short,
@@ -66,23 +69,16 @@ class TestNepaliFallback:
         assert got["language"] == "ne"
         assert got["engine_used"] == "chatterbox-ne"
 
-    def test_falls_back_to_hindi_when_it_does_not(self):
-        got = plan_engine("chatterbox-ne", NE_FALLBACK, {"language": "ne"}, NEVER, TUNED)
-        assert got["engine"] == DEFAULT_ENGINE
-        assert got["language"] == "hi"
-        assert got["cfg"] == 0.3
-        assert got["exaggeration"] == 0.4
+    def test_fails_when_the_nepali_engine_cannot_run(self):
+        # Nepali read by the Hindi model was delivered as a successful job and
+        # was not Nepali. There is nothing acceptable to substitute.
+        with pytest.raises(EngineUnavailable):
+            plan_engine("chatterbox-ne", None, {"language": "ne"}, NEVER, TUNED)
 
-    def test_the_fallback_is_named_in_the_result(self):
-        # The entire point: a substituted model must be visible, not just
-        # audible to someone who speaks the language.
-        got = plan_engine("chatterbox-ne", NE_FALLBACK, {"language": "ne"}, NEVER, TUNED)
-        assert got["engine_used"] == "fallback-hi"
-
-    def test_a_missing_engine_with_no_fallback_still_renders(self):
-        got = plan_engine("chatterbox-ne", None, {"language": "ne"}, NEVER, TUNED)
-        assert got["engine"] == DEFAULT_ENGINE
-        assert got["engine_used"] == DEFAULT_ENGINE
+    def test_ignores_a_hindi_fallback_even_if_one_is_sent(self):
+        # An older gateway, or a caller, may still send one. It is not used.
+        with pytest.raises(EngineUnavailable, match="never replaced"):
+            plan_engine("chatterbox-ne", NE_FALLBACK, {"language": "ne"}, NEVER, TUNED)
 
     def test_an_unknown_engine_degrades_rather_than_failing(self):
         got = plan_engine("not-a-real-engine", None, {"language": "en"}, NEVER, TUNED)

@@ -41,6 +41,7 @@ from typing import Any, Dict, List, Optional
 # in /content/backend on Colab and Kaggle.
 try:
     from backend.voiceforge_lang import (
+        EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
         change_rate,
@@ -64,6 +65,7 @@ try:
     )
 except ImportError:  # pragma: no cover - notebook layout
     from voiceforge_lang import (
+        EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
         change_rate,
@@ -372,11 +374,9 @@ def _stitch(parts: List[np.ndarray], sr: int, paragraph_breaks: List[bool]) -> n
 # so, because a render in the wrong language that claims success is worse than
 # one that admits a substitution.
 
-# Unset by default. Point it at a HuggingFace repo holding a fine-tuned
-# Nepali T3 and the "ne" profile starts using it; leave it unset and Nepali
-# runs on the Hindi fallback. Deliberately not hardcoded: the published Nepali
-# checkpoints are mostly gated, and baking in a repo that 401s would cost
-# every Nepali job a failed download before falling back anyway.
+# Where the fine-tuned Nepali T3 comes from: a HuggingFace repo or a local
+# path. The notebooks and the Modal function set it. With it unset, or if the
+# download fails, Nepali jobs fail with the reason; no other model stands in.
 #
 # Known-working, ungated: Firoj112/chatterbox-nepali-runs, which publishes the
 # finished t3_mtl_nepali_final.safetensors as well as the interim epochs. The
@@ -405,6 +405,11 @@ _NE_TAG = {"id": "hi"}
 # Engines that failed to load once. Retrying a missing download on every chunk
 # of a 100-scene job would add minutes and change nothing.
 _ENGINE_FAILED: Dict[str, str] = {}
+# When each failure was recorded. A failed load is not retried on every chunk,
+# but it is retried: with no other model allowed to stand in, a download that
+# failed once must not keep the language unavailable until the next restart.
+_ENGINE_FAILED_AT: Dict[str, float] = {}
+ENGINE_RETRY_SECONDS = 120
 
 
 def _grow_text_vocab(t3, state: Dict[str, Any]) -> None:
@@ -568,12 +573,15 @@ def engine_available(engine: str) -> bool:
     """Is this engine usable right now? Never raises, never retries a known
     failure, and never blocks the languages that do not need it."""
     if engine in _ENGINE_FAILED:
-        return False
+        if time.time() - _ENGINE_FAILED_AT.get(engine, 0) < ENGINE_RETRY_SECONDS:
+            return False
+        _ENGINE_FAILED.pop(engine, None)
     if engine == "chatterbox-ne":
         if "chatterbox-ne" in MODELS:
             return True
         if not NE_MODEL:
             _ENGINE_FAILED[engine] = "VOICEFORGE_NE_MODEL is not set"
+            _ENGINE_FAILED_AT[engine] = time.time()
             print("[engine] chatterbox-ne unavailable: no model configured", flush=True)
             return False
         try:
@@ -582,6 +590,7 @@ def engine_available(engine: str) -> bool:
             return True
         except Exception as e:  # noqa: BLE001
             _ENGINE_FAILED[engine] = str(e)[:200]
+            _ENGINE_FAILED_AT[engine] = time.time()
             print(f"[engine] chatterbox-ne failed to load: {e}", flush=True)
             return False
     _ENGINE_FAILED[engine] = "unknown engine"
@@ -593,18 +602,31 @@ def resolve_engine(
     fallback: Optional[Dict[str, Any]],
     params: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """plan_engine, with this process's real model availability."""
-    return plan_engine(
-        engine,
-        fallback,
-        params,
-        engine_available,
-        {
-            "exaggeration": DEFAULT_EXAGGERATION,
-            "cfg": DEFAULT_CFG,
-            "temperature": DEFAULT_TEMPERATURE,
-        },
-    )
+    """plan_engine, with this process's real model availability.
+
+    Raises EngineUnavailable, with the actual reason, when a language's own
+    model cannot run. The job then fails and says why; it does not come back
+    spoken by a different language's model.
+    """
+    try:
+        return plan_engine(
+            engine,
+            fallback,
+            params,
+            engine_available,
+            {
+                "exaggeration": DEFAULT_EXAGGERATION,
+                "cfg": DEFAULT_CFG,
+                "temperature": DEFAULT_TEMPERATURE,
+            },
+        )
+    except EngineUnavailable:
+        wanted = (engine or "").strip()
+        why = _ENGINE_FAILED.get(wanted) or "it has not been loaded"
+        raise EngineUnavailable(
+            f"The Nepali model could not be used on this backend ({why}). "
+            "Nothing was generated: Nepali is never read by another language's model."
+        ) from None
 
 
 # ---------------------------------------------------------------------------
@@ -832,8 +854,8 @@ def _gen_ne(
         )
         if first is None:
             first = audio
-        # Only the Nepali model reports this; on the Hindi fallback there is
-        # no signal to judge by, so the first take stands.
+        # Only the Nepali model reports this. Anything else has no signal to
+        # judge by, so its first take stands.
         if _LAST_ALIGN.get("completed_at") is not None or _TAIL_SEEN["model"] != "chatterbox-ne":
             return _fade_out(audio, sr), sr, take + 1
     return _fade_out(first, sr), sr, 3

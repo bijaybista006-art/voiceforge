@@ -18,6 +18,16 @@ DEFAULT_ENGINE = "chatterbox-mtl"
 # Engine names that mean "the stock multilingual checkpoint".
 STOCK_ENGINES = {DEFAULT_ENGINE, "chatterbox", ""}
 
+# Engines that exist because the stock model cannot speak the language at
+# all. If one of these cannot run there is nothing to substitute: Nepali read
+# by the Hindi model is not degraded Nepali, it is wrong, and it was delivered
+# looking like a successful job. So these fail instead.
+LANGUAGE_ENGINES = {"chatterbox-ne"}
+
+
+class EngineUnavailable(RuntimeError):
+    """A language's own engine could not run, and nothing may stand in for it."""
+
 
 def plan_engine(
     engine: Optional[str],
@@ -46,6 +56,13 @@ def plan_engine(
 
     if wanted in STOCK_ENGINES or available(wanted):
         return chosen
+
+    if wanted in LANGUAGE_ENGINES:
+        # Deliberately ignores any fallback the caller sent. See LANGUAGE_ENGINES.
+        raise EngineUnavailable(
+            f"the {wanted} model is not available on this backend, and it is "
+            "never replaced with another language's model"
+        )
 
     if not fallback:
         # Nothing to fall back to. Run the stock engine on the language as

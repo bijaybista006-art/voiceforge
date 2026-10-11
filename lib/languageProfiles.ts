@@ -54,9 +54,10 @@ export const DEFAULT_ENGINE = "chatterbox-mtl";
 export const LANGUAGE_PROFILES: Record<string, LanguageProfile> = {
   ne: {
     label: "Nepali",
-    // A Nepali-specific model. The backend resolves this to a real checkpoint
-    // only if one is configured; otherwise it reports the fallback, because a
-    // silent wrong-language render is worse than an honest substitution.
+    // A Nepali-specific model, and the only one allowed to speak Nepali. There
+    // is deliberately no fallback: when this model cannot run the job fails
+    // and says why. It used to fall back to Hindi, which shares the script,
+    // and the result was neither language — delivered as a success.
     engine: "chatterbox-ne",
     // Tuned for the Nepali fine-tune specifically: more expressive than the
     // narration defaults, with a lower cfg so it commits to the delivery
@@ -64,15 +65,6 @@ export const LANGUAGE_PROFILES: Record<string, LanguageProfile> = {
     exaggeration: 0.65,
     cfg: 0.35,
     temperature: 0.8,
-    // Hindi shares Devanagari and is one of Chatterbox's 23 languages. The
-    // pacing is deliberately slower and flatter than Hindi's own default:
-    // Nepali read with Hindi prosody rushes, and dropping cfg lets it breathe.
-    fallback: {
-      engine: DEFAULT_ENGINE,
-      modelLanguage: "hi",
-      cfg: 0.3,
-      exaggeration: 0.4,
-    },
   },
 };
 

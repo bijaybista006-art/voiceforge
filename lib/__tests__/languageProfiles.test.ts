@@ -77,14 +77,9 @@ describe("the Nepali profile", () => {
     expect(got.temperature).toBe(0.8);
   });
 
-  it("carries a Hindi fallback that is slower and flatter", () => {
-    // Nepali read with Hindi prosody rushes; a lower cfg lets it breathe.
-    expect(resolveSynthesis({ language: "ne" }).fallback).toEqual({
-      engine: DEFAULT_ENGINE,
-      modelLanguage: "hi",
-      cfg: 0.3,
-      exaggeration: 0.4,
-    });
+  it("has no fallback: Nepali is never handed to another language's model", () => {
+    expect(LANGUAGE_PROFILES.ne.fallback).toBeUndefined();
+    expect(resolveSynthesis({ language: "ne" }).fallback).toBeUndefined();
   });
 
   it("is case-insensitive, because callers send what they like", () => {

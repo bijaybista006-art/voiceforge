@@ -390,42 +390,26 @@ export function ApiDocs({ appUrl }: { appUrl: string }) {
           loads the first time a Nepali request arrives. English words inside Nepali text are
           respelled in Devanagari first, so one model reads each sentence whole; send{" "}
           <code className="font-mono text-[12px]">lexicon</code> to supply your own spellings. If
-          the checkpoint cannot be loaded the job falls back to Hindi, which shares the script,
-          and says so in <code className="font-mono text-[12px]">engine_used</code> rather than
-          failing.
+          the checkpoint cannot be loaded the job <strong>fails</strong> and its{" "}
+          <code className="font-mono text-[12px]">error</code> says why. Nepali is never read by
+          another language&apos;s model: that produced audio that was neither language and
+          looked like a success.
         </p>
 
         <p className="mt-4 mb-2 font-medium text-ink">Which engine ran</p>
         <p className="mb-3">
-          A finished job reports <code className="font-mono text-[12px]">engine_used</code> —{" "}
-          <code className="font-mono text-[12px]">chatterbox-ne</code> when the Nepali model ran,{" "}
-          <code className="font-mono text-[12px]">fallback-hi</code> when it did not. A silent
-          substitution is otherwise only detectable by ear, in a language you may not speak.
+          A finished Nepali job reports{" "}
+          <code className="font-mono text-[12px]">engine_used: &quot;chatterbox-ne&quot;</code>, and
+          a <code className="font-mono text-[12px]">diagnostics</code> block with what each chunk
+          did.
         </p>
         <Snippet
           code={`GET /api/v1/jobs/{job_id}
-{ "status": "done", "audio_url": "https://…", "engine_used": "fallback-hi" }`}
-        />
+{ "status": "done", "audio_url": "https://…", "engine_used": "chatterbox-ne" }
 
-        <p className="mt-4 mb-2 font-medium text-ink">Comparing by ear</p>
-        <Snippet
-          code={`POST /api/v1/tts/compare
-{ "text": "आजको समयमा प्रविधि…", "voice_id": "bijay-nepali-522a299a" }
-
-// -> two jobs to poll, one per engine
-{
-  "language": "ne",
-  "candidates": [
-    { "label": "chatterbox-ne", "job_id": "…", "status_url": "/api/v1/jobs/…" },
-    { "label": "fallback-hi",   "job_id": "…", "status_url": "/api/v1/jobs/…" }
-  ]
-}`}
+// when the Nepali model cannot run
+{ "status": "error", "error": "The Nepali model could not be used on this backend (…)" }`}
         />
-        <p className="mt-3">
-          Two jobs rather than two files, because synthesis is asynchronous everywhere else here.
-          Both count against your quota. A language with no fallback returns 400 —{" "}
-          there is nothing to compare it against.
-        </p>
       </Section>
 
       <Section
