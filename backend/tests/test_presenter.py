@@ -234,3 +234,22 @@ class TestEngineFailureMessage:
     def test_silence_is_never_reported_as_an_empty_reason(self):
         msg = vp.describe_engine_failure(3, "", "")
         assert "code 3" in msg and "no message" in msg
+
+
+class TestRunner:
+    def test_the_runner_replaces_only_the_entry_point(self, tmp_path):
+        runner = vp.write_runner(str(tmp_path))
+        cmd = vp.engine_command("latentsync-1.5", "a", "b", "c", 20, 1.5, 1, "t", python="py", runner=runner)
+        assert cmd[:2] == ["py", runner]
+        # Every argument the engine is given is unchanged.
+        plain = vp.engine_command("latentsync-1.5", "a", "b", "c", 20, 1.5, 1, "t", python="py")
+        assert cmd[2:] == plain[3:]
+
+    def test_the_runner_is_valid_python_that_still_runs_the_engines_own_script(self, tmp_path):
+        import ast
+
+        source = open(vp.write_runner(str(tmp_path)), encoding="utf-8").read()
+        ast.parse(source)
+        assert 'run_module("scripts.inference"' in source
+        # And it can be switched off without a code change.
+        assert "VOICEFORGE_LATENTSYNC_LOWMEM" in source

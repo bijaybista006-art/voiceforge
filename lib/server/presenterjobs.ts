@@ -682,6 +682,8 @@ export async function reconcilePresenter(job: Job): Promise<Job> {
             gpu: result.gpu,
             steps: result.steps,
             guidance: result.guidance,
+            engine_peak_ram_mb: (result as Record<string, unknown>).engine_peak_ram_mb,
+            low_memory_load: (result as Record<string, unknown>).low_memory_load,
             sync: result.sync && Object.keys(result.sync).length ? result.sync : undefined,
           }).filter(([, v]) => v !== undefined && v !== null)
         );

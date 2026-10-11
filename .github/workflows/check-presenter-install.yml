@@ -86,11 +86,19 @@ jobs:
           cwd = "/tmp/voiceforge-presenter/LatentSync"
           # --help is printed only after every import at the top of the
           # script has succeeded, so it proves start-up without a GPU.
-          for module in ("scripts.inference", "eval.eval_sync_conf"):
-              p = subprocess.run([py, "-m", module, "--help"], cwd=cwd, env=vp._engine_env(),
+          runner = vp.write_runner("/tmp")
+          for label, args in (("scripts.inference", ["-m", "scripts.inference"]),
+                              ("eval.eval_sync_conf", ["-m", "eval.eval_sync_conf"]),
+                              # The same entry point through our runner, which
+                              # swaps in the low-memory model loader.
+                              ("runner", [runner])):
+              p = subprocess.run([py, *args, "--help"], cwd=cwd, env=vp._engine_env(),
                                  capture_output=True, text=True, timeout=600)
-              print(module, "->", p.returncode)
+              print(label, "->", p.returncode)
               if p.returncode != 0:
                   print("::error::" + (p.stderr or p.stdout)[-900:].replace("\n", " "))
+                  sys.exit(1)
+              if label == "runner" and "could not install" in p.stdout:
+                  print("::error::" + p.stdout[-600:].replace("\n", " "))
                   sys.exit(1)
           PY

@@ -48,7 +48,7 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
-PRESENTER_VERSION = "1.2.0"
+PRESENTER_VERSION = "1.3.0"
 
 # Pinned so a change upstream cannot alter results between two sessions. The
 # Modal image pins the same commit.
@@ -84,6 +84,71 @@ DOWNLOAD_TIMEOUT = 120
 # mistaken request from holding a GPU for an hour.
 MAX_AUDIO_SECONDS = float(os.environ.get("VOICEFORGE_PRESENTER_MAX_SECONDS", "90"))
 ENGINE_TIMEOUT = 60 * 40
+
+# The engine's own entry point, run with one change: how its model is loaded.
+#
+# As written, the engine builds the network in 32-bit floats on the CPU (5 GB),
+# reads the whole checkpoint into memory beside it (another 5 GB), copies one
+# into the other, and only then moves the result to the GPU. That peak is
+# over 10 GB of system RAM, more than a free Colab session has to spare: the
+# kernel killed the process before it produced a frame. Kaggle has 30 GB and
+# never noticed.
+#
+# This builds the network with no storage at all, memory-maps the checkpoint
+# so its weights stay on disk until they are read, and attaches them directly
+# instead of copying. The weights end up identical; the peak falls to roughly
+# the size of the half-precision model. If anything about that is not as
+# expected it falls back to the engine's own loader, so the worst case is the
+# old behaviour, never a different result.
+_RUNNER = r'''
+import os, runpy, sys
+sys.path.insert(0, os.getcwd())
+import torch
+
+def _install_low_memory_loader():
+    from latentsync.models import unet as _unet
+    cls = _unet.UNet3DConditionModel
+    original = cls.from_pretrained.__func__
+
+    def from_pretrained(klass, model_config, ckpt_path, device="cpu"):
+        try:
+            from accelerate import init_empty_weights
+            with init_empty_weights():
+                model = klass.from_config(model_config)
+            ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True, mmap=True)
+            state = ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt
+            step = ckpt.get("global_step", 0) if isinstance(ckpt, dict) else 0
+            model.load_state_dict(state, strict=False, assign=True)
+            # Anything the checkpoint did not supply still has no storage,
+            # and could not be moved to the GPU. Use the original loader then.
+            unset = [n for n, p in list(model.named_parameters()) + list(model.named_buffers()) if p.is_meta]
+            if unset:
+                raise RuntimeError(f"{len(unset)} tensors not in the checkpoint, e.g. {unset[0]}")
+            print("[voiceforge] low-memory model load", flush=True)
+            return model, step
+        except Exception as e:
+            print(f"[voiceforge] low-memory load unavailable ({e}); using the engine's own", flush=True)
+            return original(klass, model_config, ckpt_path, device)
+
+    cls.from_pretrained = classmethod(from_pretrained)
+
+if os.environ.get("VOICEFORGE_LATENTSYNC_LOWMEM", "1") != "0":
+    try:
+        _install_low_memory_loader()
+    except Exception as e:
+        print(f"[voiceforge] could not install the low-memory loader ({e})", flush=True)
+
+sys.argv = ["scripts.inference", *sys.argv[1:]]
+runpy.run_module("scripts.inference", run_name="__main__")
+'''
+
+
+def write_runner(directory: str) -> str:
+    path = os.path.join(directory, "vf_runner.py")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(_RUNNER)
+    return path
+
 
 RENDERS: Dict[str, Dict[str, Any]] = {}
 _LOCK = threading.Lock()
@@ -154,11 +219,14 @@ def engine_command(
     seed: int,
     temp_dir: str,
     python: Optional[str] = None,
+    runner: Optional[str] = None,
 ) -> List[str]:
-    """The exact call the engine's own inference.sh makes."""
+    """The call the engine's own inference.sh makes — through `runner`, when
+    given, which is that same entry point with a lighter model load."""
     cfg = ENGINES[engine]
+    entry = [runner] if runner else ["-m", "scripts.inference"]
     return [
-        python or ENGINE_PYTHON, "-m", "scripts.inference",
+        python or ENGINE_PYTHON, *entry,
         "--unet_config_path", cfg["config"],
         "--inference_ckpt_path", cfg["ckpt"],
         "--inference_steps", str(steps),
@@ -306,6 +374,15 @@ def _memory_now() -> str:
     except Exception:  # noqa: BLE001
         pass
     return ("[" + "; ".join(parts) + "]") if parts else ""
+
+
+def _children_peak_mb() -> int:
+    try:
+        import resource
+
+        return int(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024)
+    except Exception:  # noqa: BLE001
+        return 0
 
 
 def _gpu_name() -> str:
@@ -639,10 +716,18 @@ def _run_presenter(req: Dict[str, Any]) -> None:
                 clamp_guidance(req.get("guidance")),
                 int(req.get("seed") or 1247),
                 os.path.join(work, "tmp"),
+                runner=write_runner(work),
             )
             t_engine = time.time()
+            ram_before = _children_peak_mb()
             proc = _run_engine(cmd)
             engine_seconds = round(time.time() - t_engine, 2)
+            # The most RAM any child of this process has held. It only ever
+            # rises, so it is the engine's own peak when that is a new high.
+            peak_ram = _children_peak_mb()
+            low_memory = "[voiceforge] low-memory model load" in (proc.stdout or "")
+            _set(job_id, engine_peak_ram_mb=peak_ram if peak_ram > ram_before else None,
+                 low_memory_load=low_memory)
             if proc.returncode != 0 or not os.path.exists(out):
                 raise RuntimeError(describe_engine_failure(proc.returncode, proc.stderr, proc.stdout, _memory_now()))
 
@@ -710,6 +795,8 @@ def _run_presenter(req: Dict[str, Any]) -> None:
                 "gpu": job.get("gpu"),
                 "steps": job.get("steps"),
                 "guidance": job.get("guidance"),
+                "engine_peak_ram_mb": job.get("engine_peak_ram_mb"),
+                "low_memory_load": job.get("low_memory_load"),
                 "sync": job.get("sync") or None,
             },
         }
