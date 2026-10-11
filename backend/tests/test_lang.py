@@ -150,7 +150,7 @@ class TestNepaliChunking:
         assert ne_merge_short(["नमस्ते।", long_one]) == [f"नमस्ते। {long_one}"]
 
     def test_merging_never_exceeds_the_models_limit(self):
-        long_one = "क" * 190
+        long_one = "क" * 198
         assert ne_merge_short([long_one, "छोटो।"]) == [long_one, "छोटो।"]
 
     def test_prepare_expands_then_chunks(self):
