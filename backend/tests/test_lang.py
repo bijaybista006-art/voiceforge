@@ -21,6 +21,7 @@ from backend.voiceforge_lang import (  # noqa: E402
     ne_merge_short,
     ne_pace,
     ne_split_for_retry,
+    ne_trim_trailing_blip,
     ne_expand_digits,
     ne_prepare,
     ne_spell_number,
@@ -259,3 +260,57 @@ class TestPace:
 
     def test_nonsense_is_ignored(self):
         assert ne_pace({"pace": "slow"}) == 1.0
+
+
+class TestTrailingBlip:
+    @staticmethod
+    def _tone(seconds, level=0.5, sr=24000):
+        import numpy as np
+
+        return (level * np.sin(2 * np.pi * 220 * np.arange(int(seconds * sr)) / sr)).astype(np.float32)
+
+    @staticmethod
+    def _quiet(seconds, sr=24000):
+        import numpy as np
+
+        return np.zeros(int(seconds * sr), dtype=np.float32)
+
+    def test_a_soft_sound_after_a_pause_is_dropped(self):
+        import numpy as np
+
+        sr = 24000
+        clip = np.concatenate([self._tone(2.0), self._quiet(0.2), self._tone(0.12, 0.04), self._quiet(0.04)])
+        out = ne_trim_trailing_blip(clip, sr)
+        assert 2.0 <= len(out) / sr < 2.12
+
+    def test_a_soft_final_consonant_is_kept(self):
+        import numpy as np
+
+        sr = 24000
+        # Loud speech running straight into a soft tail, with no gap between.
+        clip = np.concatenate([self._tone(2.0), self._tone(0.2, 0.04)])
+        out = ne_trim_trailing_blip(clip, sr)
+        assert len(out) == len(clip)
+
+    def test_a_brief_closure_inside_the_last_word_is_not_a_gap(self):
+        import numpy as np
+
+        sr = 24000
+        # 60 ms of closure before a final stop's release is ordinary speech.
+        clip = np.concatenate([self._tone(2.0), self._quiet(0.06), self._tone(0.08, 0.05)])
+        out = ne_trim_trailing_blip(clip, sr)
+        assert len(out) == len(clip)
+
+    def test_plain_trailing_silence_is_left_alone(self):
+        import numpy as np
+
+        sr = 24000
+        clip = np.concatenate([self._tone(2.0), self._quiet(0.4)])
+        assert len(ne_trim_trailing_blip(clip, sr)) == len(clip)
+
+    def test_a_loud_last_word_after_a_pause_is_speech_not_a_blip(self):
+        import numpy as np
+
+        sr = 24000
+        clip = np.concatenate([self._tone(2.0), self._quiet(0.3), self._tone(0.3, 0.5)])
+        assert len(ne_trim_trailing_blip(clip, sr)) == len(clip)

@@ -47,6 +47,7 @@ try:
         ne_duration_cap,
         ne_pace,
         ne_split_for_retry,
+        ne_trim_trailing_blip,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -76,6 +77,7 @@ except ImportError:  # pragma: no cover - notebook layout
         ne_duration_cap,
         ne_pace,
         ne_split_for_retry,
+        ne_trim_trailing_blip,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -157,7 +159,7 @@ _TAIL_SEEN = {"model": ""}
 # quiet — and in two of the seven a stray blip of sound began five to seven
 # frames later. Four frames keeps a margin for a slow last syllable and ends
 # the take before that blip can start.
-NE_TAIL_FRAMES = int(os.environ.get("VOICEFORGE_NE_TAIL_FRAMES", "3") or 0)
+NE_TAIL_FRAMES = int(os.environ.get("VOICEFORGE_NE_TAIL_FRAMES", "5") or 0)
 # The longest the model may stay on the last letter before the take is ended
 # anyway. A long final vowel was measured at six or more frames of real,
 # loud speech; this is well clear of that.
@@ -911,7 +913,7 @@ def _gen_ne(
         # seen to be wrong.
         ended = _LAST_ALIGN.get("completed_at") is not None
         if ended and len(audio) / max(1, sr) <= ne_duration_cap(text):
-            return _fade_out(audio, sr), sr, take + 1
+            return _fade_out(ne_trim_trailing_blip(audio, sr), sr), sr, take + 1
     _NE_GUARD["failed_takes"] = True
     return _fade_out(first, sr), sr, 3
 

@@ -280,6 +280,50 @@ def ne_cut_runaway(audio, sr: int, text: str, pause: float = 0.6):
     return out
 
 
+def ne_trim_trailing_blip(audio, sr: int, gap: float = 0.12, window: float = 0.8):
+    """Drop a stray sound that comes after the sentence has clearly ended.
+
+    After its last word the model sometimes goes quiet and then makes one
+    more short, soft sound. Measured, that sound is never loud (it stays
+    under -18 dB of the clip's peak) and it follows a real gap.
+
+    So, looking only at the last `window` seconds: find the last loud frame —
+    the end of real speech — and after it the first stretch of at least
+    `gap` seconds of quiet. If there is one, the clip ends there. A soft
+    final consonant is kept, because it follows the last loud frame without
+    such a gap; a clip that is still sounding at its end is left alone.
+    """
+    if _np is None or audio is None or len(audio) == 0:
+        return audio
+    audio = _np.asarray(audio, dtype=_np.float32)
+    rms, n = _frame_rms(audio, sr)  # 20 ms frames
+    if len(rms) < 4 or float(rms.max()) <= 0:
+        return audio
+    peak = float(rms.max())
+    loud = rms >= peak * 10 ** (-18 / 20)
+    quiet = rms < peak * 10 ** (-30 / 20)
+    first = max(0, len(rms) - int(window * sr / n))
+    loud_idx = _np.flatnonzero(loud)
+    if not len(loud_idx):
+        return audio
+    last_loud = max(int(loud_idx[-1]), first)
+    need = max(1, int(round(gap * sr / n)))
+    run = 0
+    for i in range(last_loud + 1, len(rms)):
+        run = run + 1 if quiet[i] else 0
+        if run >= need:
+            # Only worth cutting if something comes after the gap.
+            if not bool((~quiet[i + 1:]).any()):
+                return audio
+            end = (i - run + 1) * n + int(0.04 * sr)
+            out = audio[: max(1, end)].copy()
+            fade = min(len(out), int(0.03 * sr))
+            if fade > 1:
+                out[-fade:] *= _np.linspace(1.0, 0.0, fade, dtype=_np.float32)
+            return out
+    return audio
+
+
 def ne_prepare(text: str, max_chars: int = 240) -> List[str]:
     """Spoken numbers, sentence and breath chunking, then no orphan fragments."""
     return ne_merge_short(ne_chunks(ne_expand_digits(text or ""), max_chars))
