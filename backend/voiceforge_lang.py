@@ -231,6 +231,19 @@ def ne_pace(params: Dict[str, Any]) -> float:
     return min(1.25, max(0.75, pace))
 
 
+def ne_ending_frames(params: Dict[str, Any]) -> int:
+    """How long a Nepali take may hold its last letter, in 40 ms frames.
+
+    0 means "use the default". Kept between 3 and 12: under 3 clips the last
+    syllable, and past 12 the word is audibly drawn out.
+    """
+    try:
+        frames = int(params.get("ending_frames") or 0)
+    except (TypeError, ValueError):
+        return 0
+    return 0 if frames <= 0 else min(12, max(3, frames))
+
+
 def ne_duration_cap(text: str) -> float:
     """Seconds past which a Nepali take has run on beyond its text."""
     return len(text or "") * NE_SECONDS_PER_CHAR_MAX + NE_SECONDS_SLACK

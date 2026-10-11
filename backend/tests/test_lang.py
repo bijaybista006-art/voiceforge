@@ -18,6 +18,7 @@ from backend.voiceforge_lang import (  # noqa: E402
     ne_chunks,
     ne_cut_runaway,
     ne_duration_cap,
+    ne_ending_frames,
     ne_merge_short,
     ne_pace,
     ne_split_for_retry,
@@ -323,3 +324,14 @@ class TestTrailingBlip:
         clip = np.concatenate([self._tone(2.0), self._quiet(0.2), self._tone(0.04, 0.5), self._quiet(0.04)])
         out = ne_trim_trailing_blip(clip, sr)
         assert 2.0 <= len(out) / sr < 2.12
+
+
+class TestEndingFrames:
+    def test_absent_means_the_default(self):
+        assert ne_ending_frames({}) == 0
+        assert ne_ending_frames({"ending_frames": "soon"}) == 0
+
+    def test_it_is_kept_where_a_word_still_sounds_whole(self):
+        assert ne_ending_frames({"ending_frames": 6}) == 6
+        assert ne_ending_frames({"ending_frames": 1}) == 3
+        assert ne_ending_frames({"ending_frames": 40}) == 12

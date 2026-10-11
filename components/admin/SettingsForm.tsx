@@ -187,6 +187,28 @@ export function SettingsForm({
         </div>
       </Field>
 
+      <Field
+        label="Nepali sentence ending"
+        hint="How long the last word before । is held. Lower ends it sooner; too low clips it."
+      >
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={3}
+            max={12}
+            step={1}
+            value={values.nepaliEnding ?? 6}
+            onChange={(e) => patch({ nepaliEnding: Number(e.target.value) })}
+            className="w-44"
+            aria-label="Nepali sentence ending"
+          />
+          <span className="font-mono text-[13px] tabular-nums text-ink">
+            {values.nepaliEnding ?? 6}
+          </span>
+          <span className="text-[12px] text-faint">3 short · 6 default · 12 long</span>
+        </div>
+      </Field>
+
       <div className="border-b border-line px-5 py-4">
         <p className="text-[13.5px] font-semibold text-ink">Nepali pronunciations</p>
         <p className="mt-0.5 max-w-2xl text-[12.5px] leading-snug text-muted">

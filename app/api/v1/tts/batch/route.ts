@@ -41,6 +41,8 @@ const paramsSchema = z
     engine: z.string().min(1).max(40).optional(),
     /** Nepali only: playback speed of the finished audio, pitch unchanged. */
     pace: z.number().min(0.75).max(1.25).optional(),
+    /** Nepali only: how long a sentence's last word is held, 3 (short) to 12. */
+    ending_frames: z.number().int().min(3).max(12).optional(),
     /** Run on this backend only, instead of the first one available. */
     backend: z.enum(["colab", "kaggle", "custom", "modal"]).optional(),
   })

@@ -22,6 +22,7 @@ const schema = z.object({
     .refine((m) => Object.keys(m).length <= 200, "at most 200 entries")
     .optional(),
   nepaliSpeed: z.number().min(0.75).max(1.25).optional(),
+  nepaliEnding: z.number().int().min(3).max(12).optional(),
 });
 
 export async function GET() {

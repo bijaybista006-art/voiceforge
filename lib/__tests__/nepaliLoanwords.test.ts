@@ -60,8 +60,8 @@ describe("the Nepali pronunciation list", () => {
   });
 
   it("does not touch the same letters in the middle of another word", () => {
-    const list = { "भावक": "भा-वक" };
-    expect(applyNepaliPronunciations("अभिभावक", list)).toBe("अभिभावक");
+    const list = { "वारी": "वा-री" };
+    expect(applyNepaliPronunciations("जिम्मेवारी", list)).toBe("जिम्मेवारी");
   });
 
   it("prefers the longer entry when two overlap", () => {
@@ -90,5 +90,26 @@ describe("the Nepali pronunciation list", () => {
 
   it("leaves text alone when the list is empty", () => {
     expect(prepareNepali("नमस्ते साथीहरू।")).toBe("नमस्ते साथीहरू।");
+  });
+
+  it("applies the spellings chosen by ear without any list", () => {
+    expect(prepareNepali("अभिभावकले इनबक्सको मेसेज हेर्नुपर्छ।")).toBe(
+      "अभि-भावकले इन-बक्सको म्यासेज हेर्नुपर्छ।"
+    );
+    expect(prepareNepali("अपरिचित व्यक्तिलाई क्वाइन नपठाउनुहोस्।")).toBe(
+      "अपरि-चित व्यक्तिलाई क्वाइन् नपठाउनुहोस्।"
+    );
+  });
+
+  it("lets the Settings list override a built-in spelling", () => {
+    expect(prepareNepali("लगइन गर्नुहोस्।", { pronunciations: { "लगइन": "लोग-इन" } })).toBe(
+      "लोग-इन गर्नुहोस्।"
+    );
+  });
+
+  it("gives English words the same chosen spellings", () => {
+    expect(prepareNepali("मेरो inbox मा message छ, login गर्नुहोस्।")).toBe(
+      "मेरो इन-बक्स मा म्यासेज छ, लग-इन गर्नुहोस्।"
+    );
   });
 });

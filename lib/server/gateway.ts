@@ -155,7 +155,9 @@ export async function gatewayGenerate(
     model: input.model ?? "chatterbox",
     seed: input.seed ?? 0,
     language: synth.modelLanguage,
-    ...(isNepali ? { pace: settings?.nepaliSpeed ?? 1 } : {}),
+    ...(isNepali
+      ? { pace: settings?.nepaliSpeed ?? 1, ending_frames: settings?.nepaliEnding ?? 6 }
+      : {}),
     engine: synth.engine,
     fallback: synth.fallback,
     exaggeration: synth.exaggeration,

@@ -399,7 +399,9 @@ export async function createAndDispatchJob(
     paragraph_breaks: input.paragraphBreaks,
     params: {
       // A request's own pace wins; otherwise Nepali uses the one in Settings.
-      ...(neSettings ? { pace: neSettings.nepaliSpeed ?? 1 } : {}),
+      ...(neSettings
+        ? { pace: neSettings.nepaliSpeed ?? 1, ending_frames: neSettings.nepaliEnding ?? 6 }
+        : {}),
       ...input.params,
       language: synth.modelLanguage,
       exaggeration: synth.exaggeration,

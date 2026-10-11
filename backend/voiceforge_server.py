@@ -45,6 +45,7 @@ try:
         NE_MAX_CHUNK_CHARS,
         ne_cut_runaway,
         ne_duration_cap,
+        ne_ending_frames,
         ne_pace,
         ne_split_for_retry,
         ne_trim_trailing_blip,
@@ -75,6 +76,7 @@ except ImportError:  # pragma: no cover - notebook layout
         NE_MAX_CHUNK_CHARS,
         ne_cut_runaway,
         ne_duration_cap,
+        ne_ending_frames,
         ne_pace,
         ne_split_for_retry,
         ne_trim_trailing_blip,
@@ -159,7 +161,7 @@ _TAIL_SEEN = {"model": ""}
 # quiet — and in two of the seven a stray blip of sound began five to seven
 # frames later. Four frames keeps a margin for a slow last syllable and ends
 # the take before that blip can start.
-NE_TAIL_FRAMES = int(os.environ.get("VOICEFORGE_NE_TAIL_FRAMES", "5") or 0)
+NE_TAIL_FRAMES = int(os.environ.get("VOICEFORGE_NE_TAIL_FRAMES", "6") or 0)
 # The longest the model may stay on the last letter before the take is ended
 # anyway. A long final vowel was measured at six or more frames of real,
 # loud speech; this is well clear of that.
@@ -255,8 +257,14 @@ def _patch_stream_analyzer() -> None:
                     self._vf_punct_at = frames
                 punct_at = getattr(self, "_vf_punct_at", None)
                 _LAST_ALIGN["punct_at"] = punct_at
-                at_punct = punct_at is not None and frames - punct_at >= limit
-                lingering = done_at is not None and frames - int(done_at) >= NE_LINGER_FRAMES
+                # Two ways to be finished, whichever comes first. Left to
+                # itself the model holds the last vowel of a sentence for
+                # a quarter of a second or more before it moves on to the
+                # punctuation, and a held last word sounds drawn out. So the
+                # time it may spend on the last letter is limited as well,
+                # and that limit is the one that is adjustable.
+                at_punct = punct_at is not None and frames - punct_at >= 2
+                lingering = done_at is not None and frames - int(done_at) >= limit
                 if at_punct or lingering:
                     if not _LAST_STOP["why"]:
                         _LAST_STOP["why"] = (
@@ -722,10 +730,11 @@ def _generate_chunk(
         _LAST_STOP["dropped"] = 0
         _LAST_ALIGN.clear()
         _TAIL_SEEN["model"] = model
-        if model == "chatterbox-ne" and NE_TAIL_FRAMES > 0:
+        ending = _NE_ENDING.get("frames") or NE_TAIL_FRAMES
+        if model == "chatterbox-ne" and ending > 0:
             # 25 frames a second. The guard is 60% of what the words should
             # need, so a wrong "finished" early in a sentence cannot end it.
-            _TAIL_RULE["frames"] = NE_TAIL_FRAMES
+            _TAIL_RULE["frames"] = ending
             _TAIL_RULE["min_frames"] = int(expected_speech_seconds(text) * 25 * 0.6)
         else:
             _TAIL_RULE["frames"] = 0
@@ -913,13 +922,18 @@ def _gen_ne(
         # seen to be wrong.
         ended = _LAST_ALIGN.get("completed_at") is not None
         if ended and len(audio) / max(1, sr) <= ne_duration_cap(text):
-            return _fade_out(ne_trim_trailing_blip(audio, sr), sr), sr, take + 1
+            # A longer fade than elsewhere: this take was ended on a held
+            # vowel, and 80 ms lets it fall away the way a voice does.
+            return _fade_out(ne_trim_trailing_blip(audio, sr), sr, 0.08), sr, take + 1
     _NE_GUARD["failed_takes"] = True
     return _fade_out(first, sr), sr, 3
 
 
 # What the guard had to do for the last piece of text, for the diagnostics.
 _NE_GUARD: Dict[str, Any] = {}
+# How many frames a Nepali take may spend on its last letter, when the request
+# says. Set per job from its params, under the GPU lock; 0 means the default.
+_NE_ENDING: Dict[str, int] = {"frames": 0}
 
 
 def _gen_ne_text(text: str, voice_id: str, **kw: Any) -> tuple:
@@ -1228,6 +1242,7 @@ def _run_job(job: Dict[str, Any]) -> None:
                 if is_ne:
                     # One clip per chunk, guarded against a take that will
                     # not end; see _gen_ne_text.
+                    _NE_ENDING["frames"] = ne_ending_frames(params)
                     audio, sr, takes, guard_note = _gen_ne_text(
                         text,
                         job["voice_id"],
@@ -1249,6 +1264,7 @@ def _run_job(job: Dict[str, Any]) -> None:
                         {
                             **_LAST_GEN,
                             "pace": ne_pace(params),
+                            "ending_frames": _NE_ENDING.get("frames") or NE_TAIL_FRAMES,
                             "raw_audio": _LAST_GEN.get("audio"),
                             "audio": round(len(audio) / max(1, sr), 2),
                             "takes": takes,
@@ -1577,6 +1593,7 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
                 t0 = time.time()
                 with _GPU_LOCK:
                     _BUSY = True
+                    _NE_ENDING["frames"] = ne_ending_frames(p)
                     audio, sr, _takes, _note = _gen_ne_text(
                         p["text"],
                         p["voice_id"],

@@ -137,6 +137,8 @@ export interface PlatformSettings {
   nepaliPronunciations: Record<string, string>;
   /** Playback speed of finished Nepali audio. 1 is the model's own pace. */
   nepaliSpeed: number;
+  /** How long the last word of a Nepali sentence is held, in 40 ms frames. */
+  nepaliEnding: number;
 }
 
 export const DEFAULT_SETTINGS: PlatformSettings = {
@@ -149,6 +151,8 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   // The model reads Nepali at 13-17 characters a second, fast enough to blur
   // words. A little slower by default; pitch is unchanged.
   nepaliSpeed: 0.92,
+  // Left to itself the model draws the last word of a sentence out.
+  nepaliEnding: 6,
 };
 
 export async function getSettings(): Promise<PlatformSettings> {

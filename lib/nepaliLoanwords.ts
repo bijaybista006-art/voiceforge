@@ -28,7 +28,7 @@
 export const NEPALI_LOANWORDS: Record<string, string> = {
   // accounts and security
   account: "एकाउन्ट्", accounts: "एकाउन्ट्स्", password: "पासवर्ड्",
-  passwords: "पासवर्ड्स्", login: "लगइन्", logout: "लगआउट्", signin: "साइनइन्",
+  passwords: "पासवर्ड्स्", login: "लग-इन", logout: "लगआउट्", signin: "साइनइन्",
   username: "युजरनेम्", user: "युजर्", users: "युजर्स्", security: "सेक्युरिटी",
   privacy: "प्राइभेसी", verification: "भेरिफिकेसन्", verify: "भेरिफाइ",
   "two-step": "टु-स्टेप्", step: "स्टेप्", code: "कोड्", otp: "ओटीपी",
@@ -47,7 +47,7 @@ export const NEPALI_LOANWORDS: Record<string, string> = {
   internet: "इन्टरनेट्", online: "अनलाइन्", offline: "अफलाइन्", "wi-fi": "वाइफाइ",
   wifi: "वाइफाइ", network: "नेटवर्क्", data: "डाटा", address: "एड्रेस्",
   website: "वेबसाइट्", browser: "ब्राउजर्", link: "लिङ्क्", links: "लिङ्क्स्",
-  email: "इमेल्", emails: "इमेल्स्", message: "मेसेज्", messages: "मेसेजेस्",
+  email: "इमेल्", emails: "इमेल्स्", message: "म्यासेज", messages: "म्यासेजहरू", inbox: "इन-बक्स", coin: "क्वाइन्", coins: "क्वाइन्हरू",
   call: "कल्", video: "भिडियो", videos: "भिडियोज्", audio: "अडियो",
   photo: "फोटो", photos: "फोटोज्", file: "फाइल्", files: "फाइल्स्",
   folder: "फोल्डर्", download: "डाउनलोड्", upload: "अपलोड्", share: "सेयर्",
@@ -293,11 +293,29 @@ function respell(word: string, lexicon: Record<string, string>): string {
  * case endings: "अभिभावकले" and "अभिभावकहरू" should both be caught by one entry.
  * Longest keys first, so a longer word is never half-replaced by a shorter one.
  */
+/**
+ * Spellings chosen by ear, from clips of each word written four ways.
+ *
+ * The Nepali model misreads these as normally spelled; the spelling on the
+ * right is the one that sounded right. Most add a break where the word has
+ * one, which the model does not find by itself. Anything in the Settings list
+ * overrides these.
+ */
+export const NEPALI_RESPELLINGS: Record<string, string> = {
+  "इनबक्स": "इन-बक्स",
+  "मेसेज": "म्यासेज",
+  // Better than the plain spelling, though still not right; see Settings.
+  "लगइन": "लग-इन",
+  "अभिभावक": "अभि-भावक",
+  "अपरिचित": "अपरि-चित",
+  "क्वाइन": "क्वाइन्",
+};
+
 export function applyNepaliPronunciations(
   text: string,
   list?: Record<string, string> | null
 ): string {
-  const entries = Object.entries(list ?? {})
+  const entries = Object.entries({ ...NEPALI_RESPELLINGS, ...(list ?? {}) })
     .map(([k, v]) => [k.trim(), v.trim()] as const)
     .filter(([k, v]) => k && v && /[\u0900-\u097F]/.test(k))
     .sort((a, b) => b[0].length - a[0].length);
