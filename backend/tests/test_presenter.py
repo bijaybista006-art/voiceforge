@@ -114,3 +114,13 @@ class TestRoutes:
         )
         assert client.get("/render/j2/video?token=tok").status_code == 404
         assert client.get("/render/j2/video?token=wrong").status_code == 401
+
+
+class TestSyncReport:
+    def test_reads_both_numbers(self):
+        text = "Input video: x.mp4\nSyncNet confidence: 7.93\nAV offset: -1\n"
+        assert vp.parse_sync_report(text) == {"confidence": 7.93, "offset_frames": -1}
+
+    def test_is_none_when_the_evaluation_printed_nothing_useful(self):
+        assert vp.parse_sync_report("Face not detected in x.mp4") is None
+        assert vp.parse_sync_report("") is None

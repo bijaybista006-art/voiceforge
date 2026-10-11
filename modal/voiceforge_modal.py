@@ -175,7 +175,14 @@ def _bake_presenter_weights() -> None:
     from huggingface_hub import hf_hub_download, snapshot_download
 
     ckpt = os.path.join(LATENTSYNC_DIR, "checkpoints")
-    for name in ("latentsync_unet.pt", "whisper/tiny.pt"):
+    # The last two are the face detector and SyncNet model the engine's own
+    # sync evaluation uses, so a clip's lip-sync can be measured, not judged.
+    for name in (
+        "latentsync_unet.pt",
+        "whisper/tiny.pt",
+        "auxiliary/sfd_face.pth",
+        "auxiliary/syncnet_v2.model",
+    ):
         hf_hub_download("ByteDance/LatentSync-1.6", name, local_dir=ckpt)
 
     snapshot_download("stabilityai/sd-vae-ft-mse")

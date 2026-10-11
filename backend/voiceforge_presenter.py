@@ -157,6 +157,44 @@ def _ffmpeg(args: List[str], timeout: int = 600) -> None:
         raise RuntimeError(f"ffmpeg failed: {tail_of(proc.stderr, 400)}")
 
 
+def parse_sync_report(text: str) -> Optional[Dict[str, float]]:
+    """Read the two numbers out of the engine's sync evaluation.
+
+    It prints "SyncNet confidence: 7.90" and "AV offset: -1". Confidence is
+    how clearly the mouth and the sound agree (roughly: below 3 is visibly
+    off, above 6 is good). Offset is in frames at 25 fps, so 1 is 40 ms.
+    """
+    import re
+
+    conf = re.search(r"SyncNet confidence:\s*(-?\d+(?:\.\d+)?)", text or "")
+    off = re.search(r"AV offset:\s*(-?\d+)", text or "")
+    if not conf or not off:
+        return None
+    return {"confidence": round(float(conf.group(1)), 2), "offset_frames": int(off.group(1))}
+
+
+def _measure_sync(path: str, work: str) -> Dict[str, Any]:
+    """Score a clip's lip-sync with the engine's own SyncNet evaluation.
+
+    "Is it in sync" is otherwise something only a person watching can say.
+    This puts a number on it, so a bad result can be told apart from a
+    correct result that merely looks odd. Never fatal: a clip that cannot be
+    scored is still a clip.
+    """
+    try:
+        proc = subprocess.run(
+            ["python", "-m", "eval.eval_sync_conf", "--video_path", path,
+             "--temp_dir", os.path.join(work, "sync-tmp")],
+            cwd=ENGINE_DIR, capture_output=True, text=True, timeout=600,
+        )
+        report = parse_sync_report(proc.stdout)
+        if report:
+            return report
+        return {"error": tail_of(proc.stderr or proc.stdout, 300)}
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)[:300]}
+
+
 def _gpu_name() -> str:
     try:
         out = subprocess.run(
@@ -257,8 +295,24 @@ def _run_presenter(req: Dict[str, Any]) -> None:
                 "-shortest", "-movflags", "+faststart", final,
             ])
 
+            sync: Dict[str, Any] = {}
+            if req.get("measure_sync", True):
+                _set(job_id, stage="measuring sync", progress=97)
+                # Three readings, because each rules something out: the
+                # recording as uploaded (what good looks like for this face),
+                # the engine's own output, and the file actually delivered.
+                # If the last two differ, the final mux moved something.
+                sync = {
+                    "source": _measure_sync(src_video, work),
+                    "engine_output": _measure_sync(out, work),
+                    "delivered": _measure_sync(final, work),
+                }
+
             _set(
                 job_id,
+                sync=sync,
+                steps=clamp_steps(req.get("steps")),
+                guidance=clamp_guidance(req.get("guidance")),
                 status="done", stage="done", progress=100,
                 path=final, work=work,
                 duration=round(_probe_seconds(final), 2),
@@ -293,6 +347,9 @@ def _run_presenter(req: Dict[str, Any]) -> None:
                 "engine_seconds": job.get("engine_seconds"),
                 "audio_seconds": job.get("audio_seconds"),
                 "gpu": job.get("gpu"),
+                "steps": job.get("steps"),
+                "guidance": job.get("guidance"),
+                "sync": job.get("sync") or None,
             },
         }
         # The gateway validates this body and treats a null as a wrong type,
