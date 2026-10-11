@@ -217,3 +217,20 @@ class TestMountedInANotebook:
         )
         assert res.status_code == 202
         assert client.get("/presenter/render/n1").json()["status"] == "queued"
+
+
+class TestEngineFailureMessage:
+    def test_a_traceback_is_passed_on(self):
+        msg = vp.describe_engine_failure(1, "Traceback...\nRuntimeError: no face detected", "")
+        assert "no face detected" in msg
+        assert "code 1" in msg
+
+    def test_a_killed_process_says_it_was_killed_and_why(self):
+        # Killed by the kernel: nothing on stderr, return code -9.
+        msg = vp.describe_engine_failure(-9, "", "", "[RAM 310 MB free of 12978 MB]")
+        assert "ran out of memory" in msg
+        assert "RAM 310 MB free" in msg
+
+    def test_silence_is_never_reported_as_an_empty_reason(self):
+        msg = vp.describe_engine_failure(3, "", "")
+        assert "code 3" in msg and "no message" in msg

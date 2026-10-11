@@ -48,7 +48,7 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
-PRESENTER_VERSION = "1.1.0"
+PRESENTER_VERSION = "1.2.0"
 
 # Pinned so a change upstream cannot alter results between two sessions. The
 # Modal image pins the same commit.
@@ -172,6 +172,25 @@ def engine_command(
     ]
 
 
+def describe_engine_failure(returncode: int, stderr: str, stdout: str, memory: str = "") -> str:
+    """Say why the engine stopped, including when it had no chance to say so.
+
+    Normally its traceback is at the end of stderr. But a process the system
+    kills — almost always for running out of memory — prints nothing at all,
+    and "the engine failed:" followed by nothing is no help to anyone. A
+    negative return code is the signal that ended it; -9 is the one the
+    kernel uses when memory runs out.
+    """
+    said = tail_of(stderr or stdout or "", 700)
+    if returncode is not None and returncode < 0:
+        sig = -returncode
+        why = "the system killed it, which almost always means it ran out of memory" if sig == 9 else f"it was stopped by signal {sig}"
+        return f"the lip-sync engine did not finish: {why}. {memory} {said}".strip()
+    if not said:
+        return f"the lip-sync engine exited with code {returncode} and no message. {memory}".strip()
+    return f"the lip-sync engine failed (code {returncode}): {said}"
+
+
 def extension_of(url: str, fallback: str) -> str:
     tail = url.split("?")[0].rsplit("/", 1)[-1]
     ext = tail.rsplit(".", 1)[-1].lower() if "." in tail else ""
@@ -263,6 +282,30 @@ def _gpus() -> List[str]:
         return [line.strip() for line in out.stdout.splitlines() if line.strip()]
     except Exception:  # noqa: BLE001
         return []
+
+
+def _memory_now() -> str:
+    """Free system memory and GPU memory, as one line for an error message."""
+    parts: List[str] = []
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as fh:
+            info = {line.split(":")[0]: int(line.split()[1]) for line in fh if ":" in line}
+        parts.append(
+            f"RAM {info.get('MemAvailable', 0) // 1024} MB free of {info.get('MemTotal', 0) // 1024} MB"
+        )
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.used,memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=15,
+        )
+        for i, line in enumerate(out.stdout.strip().splitlines()):
+            used, total = [x.strip() for x in line.split(",")]
+            parts.append(f"GPU{i} {used} of {total} MB used")
+    except Exception:  # noqa: BLE001
+        pass
+    return ("[" + "; ".join(parts) + "]") if parts else ""
 
 
 def _gpu_name() -> str:
@@ -601,12 +644,7 @@ def _run_presenter(req: Dict[str, Any]) -> None:
             proc = _run_engine(cmd)
             engine_seconds = round(time.time() - t_engine, 2)
             if proc.returncode != 0 or not os.path.exists(out):
-                # The engine prints its traceback to stderr and its progress
-                # to stdout; the reason is at the end of one or the other.
-                raise RuntimeError(
-                    "the lip-sync engine failed: "
-                    + tail_of(proc.stderr or proc.stdout, 900)
-                )
+                raise RuntimeError(describe_engine_failure(proc.returncode, proc.stderr, proc.stdout, _memory_now()))
 
             # The engine writes 16 kHz mono speech into the result. Put the
             # narration back at its original quality instead: the mouth was
@@ -710,6 +748,7 @@ def health_report(provider: str) -> Dict[str, Any]:
         "version": PRESENTER_VERSION,
         "busy": busy,
         "gpu": _gpu_name(),
+        "memory": _memory_now(),
     }
     if INSTALL["state"] != "idle":
         report["install"] = dict(INSTALL)
