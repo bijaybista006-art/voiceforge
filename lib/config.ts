@@ -88,39 +88,3 @@ export const MODEL_INFO: Record<ModelId, { name: string; blurb: string }> = {
     blurb: "Higher fidelity, slower, more sensitive to the reference clip.",
   },
 };
-
-// ---------------------------------------------------------------------------
-// Talking-head render budgeting
-// ---------------------------------------------------------------------------
-
-/**
- * Roughly how many seconds of GPU time each engine costs per second of audio
- * on a free T4. Measured from real runs, deliberately pessimistic — the point
- * is to stop someone starting a job that cannot finish, not to look fast.
- */
-export const RENDER_COST = {
-  wav2lip: 1.5,
-  sadtalker: 12,
-} as const;
-
-/** The GFPGAN enhancer runs a second network per frame. */
-export const ENHANCER_MULTIPLIER = 2.5;
-
-/**
- * Hard ceiling on audio length for SadTalker. Past this, a free-tier render
- * reliably outlives the session — so the app refuses rather than warning and
- * letting the user discover it 45 minutes later.
- */
-export const SADTALKER_MAX_AUDIO_SEC = 90;
-
-/** Length of the quick quality-check render. */
-export const PREVIEW_SEC = 15;
-
-export function estimateRenderSec(
-  engine: "wav2lip" | "sadtalker",
-  audioSec: number,
-  enhance = false
-): number {
-  const base = audioSec * RENDER_COST[engine];
-  return engine === "sadtalker" && enhance ? base * ENHANCER_MULTIPLIER : base;
-}

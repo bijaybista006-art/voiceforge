@@ -124,7 +124,7 @@ export default function LoginPage() {
               <span className="gradient-text">on your own GPU.</span>
             </h2>
             <p className="max-w-md text-[15px] leading-relaxed text-slate-400">
-              Long-form narration and talking-head video, generated on a GPU you control.
+              Long-form narration and presenter video, generated on GPUs you control.
               No subscription, no API key, nothing leaves your session.
             </p>
           </div>

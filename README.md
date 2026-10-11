@@ -192,27 +192,22 @@ Per-key **rate limits** and **monthly character quotas** are set when you create
 
 ---
 
-## Optional — Talking-head video (one photo → lip-synced MP4)
+## Presenter video (lip-synced intro and outro clips)
 
-The **Video** tab turns a single portrait photo plus your generated narration into a lip-synced video. It runs on a **second, separate Colab backend** — the video models (SadTalker, Wav2Lip) need an older torch/numpy stack that conflicts with Chatterbox, so they can't share the TTS session. Run it *after* your speech is done, so the one free GPU is reused rather than needed twice at once.
+A presenter is the face that speaks your intro and outro. The slideshow render in between is unchanged.
 
-### Step A — start the video backend
+**Add one** in **Admin → Presenters**, the same way you add a voice:
 
-1. Open a new Colab session and upload `colab/voiceforge_video.ipynb`.
-2. Runtime → **T4 GPU** → **Run all**. Cell 1 installs both engines (~8–12 min the first time — it downloads model checkpoints).
-3. Cell 3 prints a `trycloudflare.com` URL, plus which engines loaded.
+- **A recording** — about 15 seconds of the presenter facing the camera and talking, in good light. Only the mouth is redrawn to match each new line; everything else stays real footage, so this looks the most natural.
+- **A still image** — one clear, front-facing picture, animated from nothing. Use it for an illustrated or AI-generated presenter. It needs a much larger GPU than a recording does.
 
-### Step B — render
+The first presenter becomes the default. `GET /api/v1/presenters` lists them, so a workflow can name a different one for a single video.
 
-1. In the app, switch to the **Video** tab and paste that URL into **Video backend** → Connect.
-2. Upload one clear, front-facing face photo (JPG/PNG).
-3. Pick an engine:
-   - **SadTalker** — lip sync + eye blinking + head movement + expressions. Best for short clips (intros, hooks). Renders far slower than real time — impractical past ~1–2 min on a free T4.
-   - **Wav2Lip** — accurate mouth-only lip sync on a static photo. Fast enough for your full narration, but no blinking/head motion.
-4. Choose the voice: your generated narration (default) or an uploaded audio file.
-5. **Generate.** Progress and elapsed time show while it renders; the finished MP4 plays inline and downloads. It's saved in your browser, so it survives a reload.
+**Where it renders.** Presenter video uses the same registered backends as voice, in the same order, among the ones that report the engine. Each backend card in **Admin → Backends** has a **Video** switch, separate from Enable, so a notebook can keep doing voice while video goes elsewhere or nowhere. The Presenters page says, per kind, whether anything connected can render it right now and why not.
 
-Nothing here touches the TTS flow — the Studio tab works exactly as before whether or not you ever use video.
+**Status.** The library, the routing and the switches are in place. The engines that actually generate the clips are not installed on any backend yet, so both kinds currently read "not available".
+
+Use your own face, a generated or fictional one, or a real person who has given you explicit permission. Every upload asks which, and needs a confirmation.
 
 ---
 
@@ -229,7 +224,6 @@ Nothing here touches the TTS flow — the Studio tab works exactly as before whe
 | Generation stops partway | Colab hit its session limit | Re-run Cell 3, reconnect, **Generate remaining**. Your finished chunks are safe. |
 | Chunks are getting slower | Colab throttling a long free session | Fine. Let it finish, or restart the runtime and resume. |
 | Video tab: "not loaded" on an engine | That engine's checkpoints didn't download in the video notebook's Cell 1 | Re-run Cell 1 and watch for download errors; Cell 2 prints which engines are ready. The other engine still works. |
-| Video render fails or times out | SadTalker on a long clip exceeds the free session, or a bad/multi-face photo | Use a single clear front-facing photo. For anything past ~1–2 min, switch to Wav2Lip. |
 
 ---
 

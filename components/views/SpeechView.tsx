@@ -24,7 +24,7 @@ export function SpeechView() {
             Clone a voice, paste a script, and generate narration chunk by chunk.
           </p>
         </div>
-        <EngineStatusBar kind="speech" />
+        <EngineStatusBar />
       </header>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">

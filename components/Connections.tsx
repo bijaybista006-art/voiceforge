@@ -4,18 +4,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { HEALTH_POLL_MS } from "@/lib/config";
 import { useApp } from "@/lib/store";
-import { useVideo } from "@/lib/videoStore";
 import { Button } from "./ui/Button";
 import { Dialog } from "./ui/Dialog";
 import { FieldLabel } from "./ui/Card";
-import { IconLink, IconVideo, IconWave } from "./ui/Icons";
-import { Input } from "./ui/Input";
-
-/**
- * Both GPU backends live behind one panel. Speech and Video are separate
- * Colab sessions with separate tunnel URLs, so they connect independently —
- * the app stays fully usable with only one of them live.
- */
+import { IconLink, IconWave } from "./ui/Icons";
 
 /**
  * Speech has no URL field any more. Backends register themselves and the
@@ -63,94 +55,25 @@ export function SpeechConnectionForm() {
   );
 }
 
-export function VideoConnectionForm() {
-  const url = useVideo((s) => s.videoBackendUrl);
-  const setUrl = useVideo((s) => s.setVideoBackendUrl);
-  const connect = useVideo((s) => s.connect);
-  const connecting = useVideo((s) => s.connecting);
-  const backend = useVideo((s) => s.backend);
-
-  return (
-    <form
-      className="flex flex-col gap-2.5"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void connect();
-      }}
-    >
-      <FieldLabel>Video engine · voiceforge_video.ipynb</FieldLabel>
-      <div className="flex gap-2">
-        <Input
-          type="url"
-          inputMode="url"
-          aria-label="Video backend URL"
-          placeholder="https://your-video-tunnel.trycloudflare.com"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          className="min-w-0 flex-1 font-mono text-xs"
-        />
-        <Button type="submit" variant="video" disabled={connecting || !url.trim()}>
-          {connecting ? "…" : "Connect"}
-        </Button>
-      </div>
-      {backend.connected ? (
-        <p className="font-mono text-[11px] text-muted">
-          {backend.gpu}
-          {backend.latencyMs !== undefined ? ` · ${backend.latencyMs}ms` : ""}
-          {backend.enginesLoaded.length ? ` · ${backend.enginesLoaded.join(", ")}` : ""}
-        </p>
-      ) : (
-        <p className="text-[12px] leading-relaxed text-faint">
-          A second notebook, run after your speech is done — it needs its own GPU session.
-        </p>
-      )}
-    </form>
-  );
-}
-
 /**
  * Explicit, unmissable connection state. The words "Live" / "Offline" carry
  * the meaning — colour and the filled/hollow dot only reinforce it.
  */
-export function EngineStatus({
-  kind,
-  size = "md",
-}: {
-  kind: "speech" | "video";
-  size?: "sm" | "md";
-}) {
-  const speechOn = useApp((s) => s.backend.connected);
-  const speechGpu = useApp((s) => s.backend.gpu);
-  const videoOn = useVideo((s) => s.backend.connected);
-  const videoGpu = useVideo((s) => s.backend.gpu);
-
-  const on = kind === "speech" ? speechOn : videoOn;
-  const gpu = kind === "speech" ? speechGpu : videoGpu;
-  const accent = kind === "speech" ? "audio" : "video";
+export function EngineStatus({ size = "md" }: { size?: "sm" | "md" }) {
+  const on = useApp((s) => s.backend.connected);
+  const gpu = useApp((s) => s.backend.gpu);
 
   return (
     <span
       className={`inline-flex items-center gap-2 rounded-lg border font-medium ${
         size === "sm" ? "px-2 py-1 text-[11px]" : "px-2.5 py-1.5 text-[12px]"
-      } ${
-        on
-          ? accent === "audio"
-            ? "border-audio/40 bg-audioSoft text-audio"
-            : "border-video/40 bg-videoSoft text-video"
-          : "border-line bg-surface2 text-muted"
-      }`}
+      } ${on ? "border-audio/40 bg-audioSoft text-audio" : "border-line bg-surface2 text-muted"}`}
     >
       <span
         aria-hidden
-        className={`h-2 w-2 rounded-full ${
-          on
-            ? accent === "audio"
-              ? "bg-audio"
-              : "bg-video"
-            : "border border-faint bg-transparent"
-        }`}
+        className={`h-2 w-2 rounded-full ${on ? "bg-audio" : "border border-faint bg-transparent"}`}
       />
-      <span>{kind === "speech" ? "Speech" : "Video"}</span>
+      <span>Speech</span>
       <span className={on ? "" : "text-faint"}>{on ? "Live" : "Offline"}</span>
       {on && gpu ? (
         <span className="hidden font-mono text-[10.5px] opacity-70 sm:inline">{gpu}</span>
@@ -168,26 +91,23 @@ export function ConnectionBadges({ onOpen }: { onOpen(): void }) {
       aria-label="Manage GPU connections"
       title="Manage GPU connections"
     >
-      <EngineStatus kind="speech" size="sm" />
-      <EngineStatus kind="video" size="sm" />
+      <EngineStatus size="sm" />
       <IconLink className="mr-0.5 h-3.5 w-3.5 text-faint" />
     </button>
   );
 }
 
 /** Status + a way to fix it, for use in a page header. */
-export function EngineStatusBar({ kind }: { kind: "speech" | "video" }) {
+export function EngineStatusBar() {
   const [open, setOpen] = useState(false);
-  const speechOn = useApp((s) => s.backend.connected);
-  const videoOn = useVideo((s) => s.backend.connected);
-  const on = kind === "speech" ? speechOn : videoOn;
+  const on = useApp((s) => s.backend.connected);
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        <EngineStatus kind={kind} />
+        <EngineStatus />
         {!on ? (
-          <Button size="sm" variant={kind === "video" ? "video" : "primary"} onClick={() => setOpen(true)}>
+          <Button size="sm" variant="primary" onClick={() => setOpen(true)}>
             Connect GPU
           </Button>
         ) : null}
@@ -203,8 +123,7 @@ export function ConnectionsDialog({ open, onClose }: { open: boolean; onClose():
       open={open}
       onClose={onClose}
       title="GPU connections"
-      description="Speech backends register themselves. The video notebook still prints a URL to paste."
-      wide
+      description="Backends register themselves. Presenter video uses the same ones — switch it on or off per backend in Admin."
     >
       <div className="flex flex-col gap-6">
         <div className="flex gap-4">
@@ -213,15 +132,6 @@ export function ConnectionsDialog({ open, onClose }: { open: boolean; onClose():
           </span>
           <div className="min-w-0 flex-1">
             <SpeechConnectionForm />
-          </div>
-        </div>
-        <div className="h-px bg-line" />
-        <div className="flex gap-4">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-videoSoft text-video">
-            <IconVideo className="h-4.5 w-4.5" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <VideoConnectionForm />
           </div>
         </div>
       </div>

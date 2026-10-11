@@ -7,28 +7,24 @@ import { SpeechView } from "@/components/views/SpeechView";
 import { VideoView } from "@/components/views/VideoView";
 import { Toaster } from "@/components/ui/Toast";
 import { useApp } from "@/lib/store";
-import { useVideo } from "@/lib/videoStore";
 
 export default function Studio() {
   const hydrate = useApp((s) => s.hydrate);
   const hydrated = useApp((s) => s.hydrated);
   const generating = useApp((s) => s.queue.running && !s.queue.paused);
-  const hydrateVideo = useVideo((s) => s.hydrate);
-  const videoProcessing = useVideo((s) => s.job.status === "processing");
   const [view, setView] = useState<ViewId>("home");
 
   useEffect(() => {
     void hydrate();
-    void hydrateVideo();
-  }, [hydrate, hydrateVideo]);
+  }, [hydrate]);
 
-  // Don't let a closed tab silently nuke a run or a render.
+  // Don't let a closed tab silently nuke a run.
   useEffect(() => {
-    if (!generating && !videoProcessing) return;
+    if (!generating) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [generating, videoProcessing]);
+  }, [generating]);
 
   return (
     <>

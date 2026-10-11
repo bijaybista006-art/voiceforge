@@ -2,9 +2,9 @@
 
 import { formatDuration } from "@/lib/audio";
 import { useApp } from "@/lib/store";
-import { useVideo } from "@/lib/videoStore";
+import { anyPresenterReady, usePresenterStatus } from "@/lib/presenterClient";
 import type { ViewId } from "../Shell";
-import { SpeechConnectionForm, VideoConnectionForm } from "../Connections";
+import { SpeechConnectionForm } from "../Connections";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card, CardHeader } from "../ui/Card";
@@ -20,7 +20,7 @@ import {
 
 const STEPS = [
   { n: 1, label: "Write script", hint: "Paste or type your narration", Icon: IconScript },
-  { n: 2, label: "Select voice", hint: "Clone yours, or add a photo", Icon: IconMic },
+  { n: 2, label: "Select voice", hint: "Clone yours once, use it anywhere", Icon: IconMic },
   { n: 3, label: "Generate", hint: "Chunk by chunk, resumable", Icon: IconSparkle },
   { n: 4, label: "Download", hint: "WAV, MP3, SRT or MP4", Icon: IconDownload },
 ];
@@ -61,10 +61,11 @@ function ProductCard({
   onOpen(): void;
 }) {
   const speechReady = useApp((s) => s.backend.connected);
-  const videoReady = useVideo((s) => s.backend.connected);
+  const { status: presenterStatus } = usePresenterStatus();
+  const videoReady = anyPresenterReady(presenterStatus);
+  const presenters = presenterStatus?.presenters.length ?? 0;
   const voices = useApp((s) => s.voices.length);
   const chunks = useApp((s) => s.project.chunks);
-  const hasVideo = useVideo((s) => s.job.status === "done");
 
   const done = chunks.filter((c) => c.status === "done");
   const doneSec = done.reduce((a, c) => a + (c.durationSec ?? 0), 0);
@@ -78,9 +79,9 @@ function ProductCard({
       : voices
         ? `${voices} voice${voices > 1 ? "s" : ""} saved`
         : "No voice yet"
-    : hasVideo
-      ? "Last render ready"
-      : "No render yet";
+    : presenters
+      ? `${presenters} presenter${presenters > 1 ? "s" : ""} saved`
+      : "No presenter yet";
 
   return (
     <Card
@@ -91,15 +92,15 @@ function ProductCard({
       <CardHeader
         accent={isSpeech ? "audio" : "video"}
         icon={isSpeech ? <IconWave className="h-[18px] w-[18px]" /> : <IconVideo className="h-[18px] w-[18px]" />}
-        title={isSpeech ? "Text to Speech" : "AI Video Generation"}
+        title={isSpeech ? "Text to Speech" : "Presenter Video"}
         description={
           isSpeech
             ? "Clone your voice once, then turn any script into narration — in 23 languages."
-            : "Animate a single portrait with your narration for a lip-synced talking head."
+            : "Lip-synced intro and outro clips, spoken in your voice by a presenter you choose."
         }
         action={
           <Badge tone={ready ? (isSpeech ? "audio" : "video") : "neutral"} dot>
-            {ready ? "Ready" : "Offline"}
+            {ready ? "Ready" : isSpeech ? "Offline" : "Not available"}
           </Badge>
         }
       />
@@ -116,8 +117,6 @@ function ProductCard({
 
 export function HomeView({ onNavigate }: { onNavigate(v: ViewId): void }) {
   const speechReady = useApp((s) => s.backend.connected);
-  const videoReady = useVideo((s) => s.backend.connected);
-  const bothOffline = !speechReady && !videoReady;
 
   return (
     <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:py-12">
@@ -133,9 +132,9 @@ export function HomeView({ onNavigate }: { onNavigate(v: ViewId): void }) {
             <span className="text-audio">rendered on your own GPU.</span>
           </h1>
           <p className="mt-4 text-[15px] leading-relaxed text-muted">
-            A studio for long-form narration and talking-head video. No subscription, no API key —
-            the models run on a free Colab session you control, and nothing leaves your browser
-            except to that session.
+            A studio for long-form narration and presenter video. No subscription — the models run
+            on GPUs you control, and your voices and presenters are stored once for every backend
+            to use.
           </p>
         </div>
 
@@ -154,16 +153,13 @@ export function HomeView({ onNavigate }: { onNavigate(v: ViewId): void }) {
         </section>
 
         {/* setup — only nags while there's genuinely nothing connected */}
-        {bothOffline ? (
+        {!speechReady ? (
           <Card>
             <CardHeader
               title="Start a GPU to begin"
-              description="Run a notebook from the repo on Colab or Kaggle with a T4 GPU. Speech registers itself; the video notebook still prints a URL to paste. Takes about four minutes."
+              description="Run the notebook from the repo on Colab or Kaggle with a T4 GPU. It registers itself — there is no URL to paste. Takes about four minutes."
             />
-            <div className="grid gap-6 md:grid-cols-2">
-              <SpeechConnectionForm />
-              <VideoConnectionForm />
-            </div>
+            <SpeechConnectionForm />
           </Card>
         ) : null}
       </div>

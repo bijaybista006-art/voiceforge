@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 import { useApp } from "@/lib/store";
-import { useVideo } from "@/lib/videoStore";
 import { ConnectionsControl } from "./Connections";
 import { Badge } from "./ui/Badge";
 import { IconHome, IconVideo, IconWave } from "./ui/Icons";
@@ -12,7 +11,7 @@ export type ViewId = "home" | "speech" | "video";
 const NAV: Array<{ id: ViewId; label: string; short: string; Icon: typeof IconHome }> = [
   { id: "home", label: "Home", short: "Home", Icon: IconHome },
   { id: "speech", label: "Text to Speech", short: "Speech", Icon: IconWave },
-  { id: "video", label: "AI Video", short: "Video", Icon: IconVideo },
+  { id: "video", label: "Presenter Video", short: "Video", Icon: IconVideo },
 ];
 
 function NavItem({
@@ -66,16 +65,10 @@ export function Shell({
   const queueRunning = useApp((s) => s.queue.running);
   const doneCount = useApp((s) => s.project.chunks.filter((c) => c.status === "done").length);
   const totalCount = useApp((s) => s.project.chunks.length);
-  const videoBusy = useVideo((s) => s.job.status === "processing");
 
   const speechBadge = queueRunning ? (
     <Badge tone="live" dot pulse>
       {doneCount}/{totalCount}
-    </Badge>
-  ) : null;
-  const videoBadge = videoBusy ? (
-    <Badge tone="live" dot pulse>
-      live
     </Badge>
   ) : null;
 
@@ -101,13 +94,13 @@ export function Shell({
               {...n}
               active={view === n.id}
               onSelect={onViewChange}
-              badge={n.id === "speech" ? speechBadge : n.id === "video" ? videoBadge : undefined}
+              badge={n.id === "speech" ? speechBadge : undefined}
             />
           ))}
         </nav>
 
         <p className="mt-auto border-t border-line px-5 py-4 text-[11px] leading-relaxed text-faint">
-          Runs on your own free Colab GPU. Nothing leaves your browser except to your session.
+          Runs on GPUs you control. Voices and presenters are stored once and used by every backend.
         </p>
       </aside>
 

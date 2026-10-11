@@ -18,7 +18,11 @@ interface StoredChunkAudio {
   sampleRate: number;
 }
 
-/** Talking-head assets: the source portrait and the last rendered video. */
+/**
+ * Left from the retired talking-head feature. Nothing reads or writes it any
+ * more; the store stays in the schema so a browser that already has a v2
+ * database opens it without an upgrade.
+ */
 interface StoredVideoAsset {
   key: "sourcePhoto" | "resultVideo";
   blob: Blob;
@@ -167,32 +171,4 @@ export async function clearProjectAudio(projectId: string): Promise<void> {
   const tx = db.transaction("chunkAudio", "readwrite");
   await Promise.all(keys.map((k) => tx.store.delete(k)));
   await tx.done;
-}
-
-// ---------------------------------------------------------------------------
-// video assets (source photo + last rendered video)
-// ---------------------------------------------------------------------------
-
-export async function saveVideoAsset(
-  key: "sourcePhoto" | "resultVideo",
-  blob: Blob,
-  durationSec?: number
-): Promise<void> {
-  const db = await getDb();
-  await db.put("videoAssets", { key, blob, mime: blob.type, durationSec });
-}
-
-export async function loadVideoAsset(
-  key: "sourcePhoto" | "resultVideo"
-): Promise<{ blob: Blob; durationSec?: number } | undefined> {
-  const db = await getDb();
-  const row = await db.get("videoAssets", key);
-  return row ? { blob: row.blob, durationSec: row.durationSec } : undefined;
-}
-
-export async function deleteVideoAsset(
-  key: "sourcePhoto" | "resultVideo"
-): Promise<void> {
-  const db = await getDb();
-  await db.delete("videoAssets", key);
 }
