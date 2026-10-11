@@ -1,0 +1,71 @@
+name: Check presenter engine install
+
+# The presenter engine installs itself inside a Colab or Kaggle session, where
+# it cannot be tested from here. This runs the same install on a clean machine
+# with a newer host Python than the engine supports — the situation a notebook
+# is in — and checks that the engine's libraries import. It skips the weights
+# (several GB) and needs no GPU.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/voiceforge_presenter.py"
+      - ".github/workflows/check-presenter-install.yml"
+  workflow_dispatch:
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Deliberately newer than the engine's own 3.10.
+          python-version: "3.12"
+
+      - name: Install what the notebook already has
+        run: pip install --quiet "fastapi>=0.110"
+
+      - name: Run the engine install
+        env:
+          VOICEFORGE_PRESENTER_ROOT: /tmp/voiceforge-presenter
+          VOICEFORGE_PRESENTER_SKIP_WEIGHTS: "1"
+          # Mimic a host that leaks its own Python into child processes.
+          PYTHONPATH: /nonexistent/host-site
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, ".")
+          from backend import voiceforge_presenter as vp
+          vp._install_engine()
+          print("install:", vp.INSTALL)
+          if vp.INSTALL["state"] != "ready":
+              print("::error::" + (vp.INSTALL["error"] or "install did not finish").replace("\n", " ")[:900])
+              sys.exit(1)
+          PY
+
+      - name: The engine's libraries import
+        run: |
+          /tmp/voiceforge-presenter/venv/bin/python - <<'PY'
+          import sys
+          print("engine python:", sys.version.split()[0])
+          assert sys.version_info[:2] == (3, 10), sys.version
+          import torch, torchvision, diffusers, transformers, numpy
+          import decord, mediapipe, insightface, onnxruntime, kornia, lpips
+          import DeepCache, omegaconf, einops, librosa, scenedetect, face_alignment
+          print("torch", torch.__version__, "| torchvision", torchvision.__version__,
+                "| diffusers", diffusers.__version__, "| numpy", numpy.__version__)
+          PY
+
+      - name: The engine's own entry points load
+        working-directory: /tmp/voiceforge-presenter/LatentSync
+        run: |
+          # Imports everything inference needs, without running it.
+          /tmp/voiceforge-presenter/venv/bin/python -c "
+          from latentsync.models.unet import UNet3DConditionModel
+          from latentsync.pipelines.lipsync_pipeline import LipsyncPipeline
+          from latentsync.whisper.audio2feature import Audio2Feature
+          print('inference modules import')
+          "

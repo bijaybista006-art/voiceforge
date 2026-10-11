@@ -424,11 +424,14 @@ def _install_engine() -> None:
             _step("installing the engine's libraries (the slow part)",
                   [python, "-m", "pip", "install", "--quiet", "-r", reqs])
 
-            script = os.path.join(INSTALL_ROOT, "weights.py")
-            with open(script, "w", encoding="utf-8") as f:
-                f.write(_WEIGHTS_SCRIPT)
-            _step("downloading the weights",
-                  [python, script, os.path.join(engine_dir, "checkpoints")])
+            # Skipped only by the install check in CI, which proves the
+            # libraries resolve without downloading several GB of weights.
+            if os.environ.get("VOICEFORGE_PRESENTER_SKIP_WEIGHTS") != "1":
+                script = os.path.join(INSTALL_ROOT, "weights.py")
+                with open(script, "w", encoding="utf-8") as f:
+                    f.write(_WEIGHTS_SCRIPT)
+                _step("downloading the weights",
+                      [python, script, os.path.join(engine_dir, "checkpoints")])
 
             with open(marker, "w", encoding="utf-8") as f:
                 f.write(str(time.time()))
