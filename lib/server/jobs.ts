@@ -535,6 +535,17 @@ export async function collectJob(job: Job, result: BackendResult): Promise<Job> 
 
 const COLLECT_LOCK_SECONDS = 180;
 
+/** Whether a collector currently holds this job. False when there is no Redis. */
+async function isBeingCollected(jobId: string): Promise<boolean> {
+  const r = getRedis();
+  if (!r) return false;
+  try {
+    return (await r.exists(`job:${jobId}:collecting`)) === 1;
+  } catch {
+    return false;
+  }
+}
+
 /** SET NX EX - true when this caller now owns the lock (or there is no Redis). */
 async function acquireLock(key: string, ttlSeconds: number): Promise<boolean> {
   const r = getRedis();
@@ -638,6 +649,15 @@ export async function reconcileJob(job: Job): Promise<Job> {
       // not "gone", and killing it here raced our own dispatch. Only a job
       // the backend once acknowledged can have been forgotten by a restart.
       if (job.status === "queued") return job;
+      // The other way a backend comes to not know a job: it finished, and
+      // the completion callback is collecting it right now. Collection tells
+      // the backend to drop its copy a moment before it records "done", so a
+      // poll landing in that gap used to read a finished job as a lost one —
+      // and anything waiting on it (a presenter clip waiting for its
+      // narration) failed for good. Look again before believing the 404.
+      if (await isBeingCollected(job.id)) return job;
+      const fresh = await getJob(job.id);
+      if (fresh && (fresh.status === "done" || fresh.status === "error")) return fresh;
       return saveJob({
         ...job,
         status: "error",

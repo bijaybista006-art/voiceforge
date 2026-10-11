@@ -30,6 +30,9 @@ import { resolveVoice } from "./voices";
 const INDEX = "vf:jobs";
 const INDEX_LIMIT = 200;
 
+/** How long a narration is left to its own callback before it is asked about. */
+const NARRATION_RECONCILE_AFTER_MS = 8_000;
+
 /** A clip is seconds of video; if it has not reported in this long it is lost. */
 export const PRESENTER_STALE_AFTER_MS = 45 * 60 * 1000;
 /** Past this the clip stays on the backend and the job records that URL. */
@@ -368,7 +371,13 @@ async function advanceFromNarration(job: Job): Promise<Job> {
   if (!audio) {
     return saveJob({ ...job, status: "error", error: "the narration job disappeared" });
   }
-  if (audio.status === "running" || audio.status === "queued") {
+  // Leave a narration alone until it has had a few seconds: the completion
+  // callback normally finishes it, and asking the backend on every poll only
+  // adds traffic.
+  if (
+    (audio.status === "running" || audio.status === "queued") &&
+    Date.now() - audio.updatedAt > NARRATION_RECONCILE_AFTER_MS
+  ) {
     audio = await reconcileJob(audio);
   }
   if (audio.status === "error") {
