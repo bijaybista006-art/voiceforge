@@ -205,7 +205,20 @@ The first presenter becomes the default. `GET /api/v1/presenters` lists them, so
 
 **Where it renders.** Presenter video uses the same registered backends as voice, in the same order, among the ones that report the engine. Each backend card in **Admin → Backends** has a **Video** switch, separate from Enable, so a notebook can keep doing voice while video goes elsewhere or nowhere. The Presenters page says, per kind, whether anything connected can render it right now and why not.
 
-**Make a clip.** `POST /api/v1/presenter` with `audio_job_id` (a finished TTS job) or `audio_url`, and optionally `presenter_id`. It returns a job; poll `/api/v1/jobs/{id}` and the finished job carries `video_url`, an MP4 you can pass to `POST /api/v1/video` as the intro or outro clip.
+**Make a clip in the studio.** Open **Presenter Video**, type the line, choose a voice and a presenter, and press Generate. The page shows which step is running, then the finished MP4 with a download button, a link, and its measured lip-sync score.
+
+**Make a clip from a workflow.** One call does the narration and the lip-sync:
+
+```json
+POST /api/v1/presenter
+{
+  "text": "Hello everyone, welcome back to the channel.",
+  "voice_id": "bijay-english-faafab11",
+  "presenter_id": "avatar-1-42f29930"
+}
+```
+
+Both ids are optional and fall back to the defaults; each presenter and voice card has a copy button for its id. Instead of `text` you can send `audio_job_id` (a finished TTS job) or `audio_url`. The call returns a job: poll `/api/v1/jobs/{id}` until it is done, then pass its `video_url` to `POST /api/v1/video` as the intro or outro clip. Text is limited to 900 characters, since a presenter clip is an intro or an outro and the engine stops at 90 seconds of audio.
 
 **Status.** Recordings work on Modal, using LatentSync 1.6 on an L4 GPU: a 7.7-second line took about 4.5 minutes and cost roughly six cents. Still images are not available yet — no engine is installed for them. Colab and Kaggle do not run presenter video yet.
 
