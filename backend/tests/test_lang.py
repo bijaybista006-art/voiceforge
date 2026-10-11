@@ -13,6 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from backend.voiceforge_lang import (  # noqa: E402
     DEFAULT_ENGINE,
     ne_chunks,
+    ne_merge_short,
     ne_expand_digits,
     ne_prepare,
     ne_spell_number,
@@ -131,9 +132,31 @@ class TestNepaliChunking:
     def test_whitespace_is_collapsed(self):
         assert ne_chunks("एक    दुई")[0] == "एक दुई"
 
+    def test_a_short_sentence_is_not_voiced_alone(self):
+        # Four tiny sentences were four chunks, and each came back three to
+        # four times too long: the model ran on past the words.
+        out = ne_merge_short(["एआई के हो?", "एआई राम्रो छ।", "एआई नयाँ हो।", "एआई सजिलो छ।"])
+        assert len(out) == 1
+        assert out[0] == "एआई के हो? एआई राम्रो छ। एआई नयाँ हो। एआई सजिलो छ।"
+
+    def test_ordinary_sentences_are_left_alone(self):
+        a = "आजको समयमा प्रविधिले हाम्रो दैनिक काम धेरै सजिलो बनाएको छ।"
+        b = "यसले हामीलाई नयाँ कुरा सिक्न र समय बचाउन पनि मद्दत गर्छ।"
+        assert len(a) >= 40 and len(b) >= 40
+        assert ne_merge_short([a, b]) == [a, b]
+
+    def test_a_short_opener_joins_the_sentence_after_it(self):
+        long_one = "आजको समयमा प्रविधिले हाम्रो दैनिक काम धेरै सजिलो बनाएको छ।"
+        assert ne_merge_short(["नमस्ते।", long_one]) == [f"नमस्ते। {long_one}"]
+
+    def test_merging_never_exceeds_the_models_limit(self):
+        long_one = "क" * 190
+        assert ne_merge_short([long_one, "छोटो।"]) == [long_one, "छोटो।"]
+
     def test_prepare_expands_then_chunks(self):
         out = ne_prepare("सन् 2026 हो। अर्को वाक्य।")
-        assert len(out) == 2
+        # Two short sentences now travel as one chunk — see ne_merge_short.
+        assert len(out) == 1
         assert "2026" not in " ".join(out)
 
 

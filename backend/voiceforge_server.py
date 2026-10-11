@@ -921,6 +921,35 @@ def _run_job(job: Dict[str, Any]) -> None:
         with _GPU_LOCK:
             _BUSY = True
             for i, text in enumerate(chunks if not rendered else []):
+                if is_ne:
+                    # Nepali takes are checked against how long the words
+                    # could honestly need; see _gen_clean. A lone short line
+                    # is where the model runs on past the text.
+                    audio, sr, takes = _gen_clean(
+                        text,
+                        job["voice_id"],
+                        model=params.get("model", "chatterbox"),
+                        engine=plan["engine"],
+                        language=plan["language"],
+                        st={
+                            "exaggeration": plan["exaggeration"],
+                            "cfg": plan["cfg"],
+                            "temperature": plan["temperature"],
+                        },
+                        seed=int(params.get("seed", 0)) + i,
+                    )
+                    rendered.append(audio)
+                    diag.append(
+                        {
+                            **_LAST_GEN,
+                            "raw_audio": _LAST_GEN.get("audio"),
+                            "audio": round(len(audio) / max(1, sr), 2),
+                            "takes": takes,
+                        }
+                    )
+                    with _JOB_LOCK:
+                        JOBS[job_id]["progress"] = round((i + 1) / max(1, len(chunks)) * 100)
+                    continue
                 audio, sr, _ = _generate_chunk(
                     text,
                     job["voice_id"],
@@ -1093,6 +1122,33 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
             # sent language "ne" to a model that has no such language and got
             # a hard 500, while the identical text through a job spoke Nepali.
             plan = resolve_engine(p.get("engine"), p.get("fallback"), p)
+            if str(p.get("language", "")).lower() == "ne" or plan["engine"] == "chatterbox-ne":
+                # The studio's one-chunk path gets the same protection a job
+                # does: a take that runs on past the text is re-rolled, and
+                # whatever is left after the words is cut.
+                t0 = time.time()
+                with _GPU_LOCK:
+                    _BUSY = True
+                    audio, sr, _takes = _gen_clean(
+                        p["text"],
+                        p["voice_id"],
+                        model=p.get("model", "chatterbox"),
+                        engine=plan["engine"],
+                        language=plan["language"],
+                        st={
+                            "exaggeration": plan["exaggeration"],
+                            "cfg": plan["cfg"],
+                            "temperature": plan["temperature"],
+                        },
+                        seed=int(p.get("seed", 0)),
+                    )
+                    _BUSY = False
+                return {
+                    "audio_b64": _wav_b64(audio, sr),
+                    "sample_rate": sr,
+                    "duration": round(len(audio) / sr, 2),
+                    "gen_seconds": round(time.time() - t0, 2),
+                }
             with _GPU_LOCK:
                 _BUSY = True
                 audio, sr, gen_seconds = _generate_chunk(

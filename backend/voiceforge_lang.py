@@ -156,9 +156,43 @@ def ne_chunks(text: str, max_chars: int = 240) -> List[str]:
     return [c for c in out if c]
 
 
+# A chunk shorter than this is not sent to the model on its own.
+NE_MIN_CHUNK_CHARS = 40
+# The checkpoint's authors put its limit at 200 characters per input.
+NE_MAX_CHUNK_CHARS = 200
+
+
+def ne_merge_short(
+    chunks: List[str],
+    min_chars: int = NE_MIN_CHUNK_CHARS,
+    max_chars: int = NE_MAX_CHUNK_CHARS,
+) -> List[str]:
+    """Join a short sentence to its neighbour instead of voicing it alone.
+
+    The Nepali checkpoint does not stop cleanly on a very short input. Given
+    "एआई के हो?" it says the words in about a second and then keeps going for
+    three or four more, in sounds that belong to no language — measured at
+    2.5-4 characters a second against 10-11 for a normal sentence. The same
+    words inside a longer line are spoken correctly.
+
+    So a sentence under `min_chars` rides with the one before it (or after
+    it, when it comes first), as long as the pair stays inside the model's
+    own limit. Sentences of ordinary length are left exactly as they were.
+    """
+    out: List[str] = []
+    for chunk in chunks:
+        if out and len(out[-1]) + 1 + len(chunk) <= max_chars and (
+            len(chunk) < min_chars or len(out[-1]) < min_chars
+        ):
+            out[-1] = f"{out[-1]} {chunk}"
+        else:
+            out.append(chunk)
+    return out
+
+
 def ne_prepare(text: str, max_chars: int = 240) -> List[str]:
-    """Spoken numbers, then sentence and breath chunking."""
-    return ne_chunks(ne_expand_digits(text or ""), max_chars)
+    """Spoken numbers, sentence and breath chunking, then no orphan fragments."""
+    return ne_merge_short(ne_chunks(ne_expand_digits(text or ""), max_chars))
 
 
 # ---------------------------------------------------------------------------
