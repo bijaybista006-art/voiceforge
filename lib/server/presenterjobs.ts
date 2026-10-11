@@ -213,10 +213,12 @@ async function requirePresenter(presenterId?: string | null): Promise<Presenter>
 }
 
 async function requireTargets(presenter: Presenter): Promise<BackendView[]> {
-  let targets = await usablePresenterBackends(presenter.kind);
-  if (!targets.length && (await discoverMissingPresenters(25_000))) {
-    targets = await usablePresenterBackends(presenter.kind);
-  }
+  // Ask first, every time. It is a no-op unless a backend is due to be asked,
+  // and without it a notebook that finished installing its engine was only
+  // ever noticed when someone opened the Presenters page — so clips kept
+  // going to the paid backend behind it in the order.
+  await discoverMissingPresenters(12_000);
+  const targets = await usablePresenterBackends(presenter.kind);
   if (!targets.length) {
     throw new JobError(
       presenter.kind === "recording"
