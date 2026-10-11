@@ -205,7 +205,9 @@ The first presenter becomes the default. `GET /api/v1/presenters` lists them, so
 
 **Where it renders.** Presenter video uses the same registered backends as voice, in the same order, among the ones that report the engine. Each backend card in **Admin → Backends** has a **Video** switch, separate from Enable, so a notebook can keep doing voice while video goes elsewhere or nowhere. The Presenters page says, per kind, whether anything connected can render it right now and why not.
 
-**Status.** The library, the routing and the switches are in place. The engines that actually generate the clips are not installed on any backend yet, so both kinds currently read "not available".
+**Make a clip.** `POST /api/v1/presenter` with `audio_job_id` (a finished TTS job) or `audio_url`, and optionally `presenter_id`. It returns a job; poll `/api/v1/jobs/{id}` and the finished job carries `video_url`, an MP4 you can pass to `POST /api/v1/video` as the intro or outro clip.
+
+**Status.** Recordings work on Modal, using LatentSync 1.6 on an L4 GPU: a 7.7-second line took about 4.5 minutes and cost roughly six cents. Still images are not available yet — no engine is installed for them. Colab and Kaggle do not run presenter video yet.
 
 Use your own face, a generated or fictional one, or a real person who has given you explicit permission. Every upload asks which, and needs a confirmation.
 
