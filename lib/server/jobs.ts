@@ -285,11 +285,19 @@ export async function createAndDispatchJob(
   input: CreateJobInput,
   appUrl: string
 ): Promise<Job> {
-  const candidates = await usableBackends();
+  // `params.backend` pins a job to one backend. Opt-in: without it the job
+  // walks the standard order exactly as before. It exists so a fix deployed
+  // to one backend can be checked there while another, older one is online
+  // and would otherwise take the job first.
+  const pinned = typeof input.params?.backend === "string" ? input.params.backend : null;
+  const usable = await usableBackends();
+  const candidates = pinned ? usable.filter((b) => b.provider === pinned) : usable;
   const backend = candidates[0];
   if (!backend) {
     throw new JobError(
-      "No GPU backend is online. Start a notebook, or pick another backend in Admin → Backends.",
+      pinned
+        ? `The "${pinned}" backend isn't online right now.`
+        : "No GPU backend is online. Start a notebook, or pick another backend in Admin → Backends.",
       503,
       "no_backend"
     );

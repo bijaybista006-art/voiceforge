@@ -55,6 +55,8 @@ const paramsSchema = z
     model: z.enum(["chatterbox", "qwen3"]).optional(),
     /** Overrides the language profile's engine for this one request. */
     engine: z.string().min(1).max(40).optional(),
+    /** Run on this backend only, instead of the first one available. */
+    backend: z.enum(["colab", "kaggle", "custom", "modal"]).optional(),
     ...expressiveFields,
   })
   .optional();

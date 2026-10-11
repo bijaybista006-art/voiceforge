@@ -130,6 +130,16 @@ _BUSY = False
 REPEAT_LIMIT = int(os.environ.get("VOICEFORGE_REPEAT_LIMIT", "25") or 0)
 # Why the last generation was cut short, if it was. Read by the [gen] log line.
 _LAST_STOP = {"why": ""}
+# What the alignment check saw on the last take: how many 40 ms frames were
+# generated, and at which frame it judged the text to be finished.
+_LAST_ALIGN: Dict[str, Any] = {}
+# Set per take. When positive, a take is ended this many frames after the
+# text is finished, provided at least `min_frames` have been generated.
+_TAIL_RULE = {"frames": 0, "min_frames": 0}
+# How long the Nepali model may keep going once it has reached the end of its
+# text. The last syllable and the danda still have to be spoken after that
+# point — about five frames — so ten leaves room and no more.
+NE_TAIL_FRAMES = int(os.environ.get("VOICEFORGE_NE_TAIL_FRAMES", "10") or 0)
 
 
 def _patch_stream_analyzer() -> None:
@@ -174,6 +184,33 @@ def _patch_stream_analyzer() -> None:
             out = original(self, logits, next_token=None)
             if run >= REPEAT_LIMIT:
                 _LAST_STOP["why"] = f"same token x{run}"
+                out = -(2 ** 15) * torch.ones_like(out)
+                out[..., self.eos_idx] = 2 ** 15
+
+            # The check already knows when the text is finished; its own
+            # rules then wait for a second or so of evidence before ending
+            # the take, and that second is audible as extra sound after the
+            # last word. With a tail rule set, the take ends a fixed few
+            # frames after the text does. `min_frames` is a guard against
+            # the check being wrong about "finished": nothing is cut short
+            # before most of the expected speech exists.
+            frames = int(getattr(self, "curr_frame_pos", 0))
+            done_at = getattr(self, "completed_at", None)
+            _LAST_ALIGN.update(
+                {
+                    "frames": frames,
+                    "completed_at": int(done_at) if done_at is not None else None,
+                }
+            )
+            limit = _TAIL_RULE["frames"]
+            if (
+                limit > 0
+                and done_at is not None
+                and frames >= _TAIL_RULE["min_frames"]
+                and frames - int(done_at) >= limit
+            ):
+                if not _LAST_STOP["why"]:
+                    _LAST_STOP["why"] = f"text finished at frame {int(done_at)}, ended at {frames}"
                 out = -(2 ** 15) * torch.ones_like(out)
                 out[..., self.eos_idx] = 2 ** 15
             return out
@@ -566,7 +603,19 @@ def _generate_chunk(
         accepted = inspect.signature(MODELS[model].generate).parameters
         kwargs = {k: v for k, v in kwargs.items() if k in accepted}
         _LAST_STOP["why"] = ""
-        wav = MODELS[model].generate(text, **kwargs)
+        _LAST_ALIGN.clear()
+        if model == "chatterbox-ne" and NE_TAIL_FRAMES > 0:
+            # 25 frames a second. The guard is 60% of what the words should
+            # need, so a wrong "finished" early in a sentence cannot end it.
+            _TAIL_RULE["frames"] = NE_TAIL_FRAMES
+            _TAIL_RULE["min_frames"] = int(expected_speech_seconds(text) * 25 * 0.6)
+        else:
+            _TAIL_RULE["frames"] = 0
+            _TAIL_RULE["min_frames"] = 0
+        try:
+            wav = MODELS[model].generate(text, **kwargs)
+        finally:
+            _TAIL_RULE["frames"] = 0
         audio = wav.squeeze(0).cpu().numpy()
         sr = MODELS[model].sr
         # One line per take. Without it a bad render can only be described,
@@ -580,6 +629,8 @@ def _generate_chunk(
                 "chars": len(text),
                 "audio": round(len(audio) / max(1, sr), 2),
                 "stop": _LAST_STOP["why"] or "natural",
+                "frames": _LAST_ALIGN.get("frames"),
+                "text_done_at": _LAST_ALIGN.get("completed_at"),
                 "exaggeration": float(exaggeration),
                 "cfg": float(cfg),
                 "temperature": float(temperature),
