@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatPronunciations,
   normalizeText,
+  parsePronunciations,
   numberToWords,
   ordinalToWords,
   stripMarkdown,
@@ -172,5 +174,75 @@ describe("spoken forms", () => {
 
   it("only applies to English", () => {
     expect(normalizeText("AI र M365", "ne")).toBe("AI र M365");
+  });
+});
+
+describe("respelled words", () => {
+  it("writes Copilot the way the dictionary does, in any case", () => {
+    expect(normalizeText("Copilot helps. Ask copilot anything.")).toBe(
+      "co-pilot helps. Ask co-pilot anything."
+    );
+    expect(normalizeText("Microsoft Copilot 365")).toBe("Microsoft co-pilot three sixty-five");
+  });
+
+  it("splits product names at the capital the model would lose", () => {
+    expect(normalizeText("Open SharePoint and OneDrive in PowerShell")).toBe(
+      "Open Share Point and One Drive in Power Shell"
+    );
+    expect(normalizeText("YouTube and LinkedIn")).toBe("You Tube and Linked In");
+  });
+
+  it("leaves ordinary words, capitals and Mc names alone", () => {
+    expect(normalizeText("Hello World from NASA and McDonald")).toBe(
+      "Hello World from NASA and McDonald"
+    );
+  });
+
+  it("reads iOS and macOS as their letters", () => {
+    expect(normalizeText("iOS and macOS")).toBe("eye oh ess and mac oh ess");
+  });
+});
+
+describe("the pronunciation list from Settings", () => {
+  it("replaces a whole word, in any case", () => {
+    const opts = { pronunciations: { Azure: "azh-er" } };
+    expect(normalizeText("Azure and azure, not Azureish", "en", opts)).toBe(
+      "azh-er and azh-er, not Azureish"
+    );
+  });
+
+  it("overrides a built-in respelling", () => {
+    const opts = { pronunciations: { Copilot: "koh pilot" } };
+    expect(normalizeText("Copilot", "en", opts)).toBe("koh pilot");
+  });
+
+  it("overrides how initials are spelled", () => {
+    const opts = { pronunciations: { AI: "A I" } };
+    expect(normalizeText("AI is here", "en", opts)).toBe("A I is here");
+  });
+
+  it("matches a word written in capitals only in capitals", () => {
+    const opts = { pronunciations: { IT: "eye tee" } };
+    expect(normalizeText("IT fixed it", "en", opts)).toBe("eye tee fixed it");
+  });
+
+  it("does not expand a spoken form a second time", () => {
+    // "A I" must not be re-read by the initialism rule as two words to spell.
+    const opts = { pronunciations: { AI: "the AI system" } };
+    expect(normalizeText("AI", "en", opts)).toBe("the AI system");
+  });
+
+  it("only applies to English", () => {
+    expect(normalizeText("Copilot", "ne", { pronunciations: { Copilot: "x" } })).toBe("Copilot");
+  });
+
+  it("parses the settings text and ignores half-typed lines", () => {
+    expect(parsePronunciations("Copilot = co-pilot\nAI=ay eye\n\nnot a rule\nEmpty =\n= nothing")).toEqual({
+      Copilot: "co-pilot",
+      AI: "ay eye",
+    });
+    expect(formatPronunciations({ Copilot: "co-pilot", AI: "ay eye" })).toBe(
+      "Copilot = co-pilot\nAI = ay eye"
+    );
   });
 });

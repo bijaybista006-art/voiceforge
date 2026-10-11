@@ -13,6 +13,10 @@ const schema = z.object({
   kaggleNotebookUrl: z.string().max(500).optional(),
   defaultModel: z.enum(["chatterbox", "qwen3"]).optional(),
   defaultLanguage: z.string().min(2).max(8).optional(),
+  pronunciations: z
+    .record(z.string().min(1).max(40), z.string().min(1).max(80))
+    .refine((m) => Object.keys(m).length <= 200, "at most 200 entries")
+    .optional(),
 });
 
 export async function GET() {

@@ -36,6 +36,8 @@ export interface GatewayStatus {
   active: ActiveBackend;
   backend: GatewayBackendInfo | null;
   voices: StudioVoice[];
+  /** Admin → Settings pronunciation list; absent on an older deployment. */
+  pronunciations?: Record<string, string>;
   storageReady: boolean;
   hint: string | null;
 }

@@ -10,6 +10,7 @@
  * by pasting the script into the UI.
  */
 
+import { getSettings } from "@/lib/server/redis";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { chunkScript } from "@/lib/chunker";
@@ -112,6 +113,7 @@ export async function POST(req: Request) {
   );
   const drafts = chunkScript(body.text, undefined, language, {
     keepProsodyTags: expressive.prosody_tags === true,
+    pronunciations: (await getSettings()).pronunciations,
   });
   if (!drafts.length) {
     return apiError("That text has nothing to say once normalized.", 400, "empty_text");

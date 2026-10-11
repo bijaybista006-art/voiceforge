@@ -9,6 +9,7 @@
  * capped short. Anything longer belongs on /api/v1/tts, which is asynchronous.
  */
 
+import { getSettings } from "@/lib/server/redis";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
@@ -79,7 +80,9 @@ export async function POST(req: Request) {
   }
 
   const language = body.language ?? voice.language;
-  const drafts = chunkScript(body.input, undefined, language);
+  const drafts = chunkScript(body.input, undefined, language, {
+    pronunciations: (await getSettings()).pronunciations,
+  });
   if (!drafts.length) {
     return apiError("That input has nothing to say once normalized.", 400, "empty_text");
   }

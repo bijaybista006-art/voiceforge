@@ -16,6 +16,7 @@ import { DEFAULT_PARAMS } from "@/lib/config";
 import { apiError, appUrlFrom, authenticate, checkQuota } from "@/lib/server/apiauth";
 import { recordKeyUsage } from "@/lib/server/apikeys";
 import { JobError, createAndDispatchJob } from "@/lib/server/jobs";
+import { getSettings } from "@/lib/server/redis";
 import { resolveVoice } from "@/lib/server/voices";
 
 export const runtime = "nodejs";
@@ -87,11 +88,12 @@ export async function POST(req: Request) {
   }
 
   const language = body.language ?? voice.language;
+  const { pronunciations } = await getSettings();
 
   // One chunk per item keeps the item boundaries intact — the backend writes
   // one file per chunk in "items" mode, so an item must not be split.
   const chunks = body.items.map((item) => {
-    const drafts = chunkScript(item.text, undefined, language);
+    const drafts = chunkScript(item.text, undefined, language, { pronunciations });
     return drafts.map((d) => d.text).join(" ");
   });
   if (chunks.some((c) => !c.trim())) {

@@ -24,7 +24,7 @@ import {
   type Job,
 } from "./jobs";
 import { presenterCapability, resolvePresenter, usablePresenterBackends } from "./presenters";
-import { getRedis, kvDel, kvGet, kvSet } from "./redis";
+import { getSettings, getRedis, kvDel, kvGet, kvSet } from "./redis";
 import { resolveVoice } from "./voices";
 
 const INDEX = "vf:jobs";
@@ -329,7 +329,9 @@ export async function createPresenterFromText(
   }
 
   const language = input.language ?? voice.language;
-  const drafts = chunkScript(text, undefined, language);
+  const drafts = chunkScript(text, undefined, language, {
+    pronunciations: (await getSettings()).pronunciations,
+  });
   if (!drafts.length) {
     throw new JobError("That text has nothing to say once normalized.", 400, "empty_text");
   }

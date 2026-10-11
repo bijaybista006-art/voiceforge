@@ -131,6 +131,8 @@ export interface PlatformSettings {
   kaggleNotebookUrl: string;
   defaultModel: "chatterbox" | "qwen3";
   defaultLanguage: string;
+  /** English words and how to write them so the model says them right. */
+  pronunciations: Record<string, string>;
 }
 
 export const DEFAULT_SETTINGS: PlatformSettings = {
@@ -138,6 +140,7 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   kaggleNotebookUrl: "",
   defaultModel: "chatterbox",
   defaultLanguage: "en",
+  pronunciations: {},
 };
 
 export async function getSettings(): Promise<PlatformSettings> {

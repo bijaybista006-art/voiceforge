@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { LANGUAGES, MODEL_INFO } from "@/lib/config";
+import { formatPronunciations, parsePronunciations } from "@/lib/normalize";
 import { toast } from "@/lib/toast";
 import type { ModelId } from "@/lib/types";
 import type { PlatformSettings } from "@/lib/server/redis";
@@ -37,6 +38,11 @@ export function SettingsForm({
   canSave: boolean;
 }) {
   const [values, setValues] = useState<PlatformSettings>(initial);
+  // Edited as plain text and parsed on the way out, so a half-typed line is
+  // never "invalid" while you are still typing it.
+  const [pronunciationText, setPronunciationText] = useState(() =>
+    formatPronunciations(initial.pronunciations)
+  );
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
@@ -129,6 +135,32 @@ export function SettingsForm({
           className="font-mono text-xs"
         />
       </Field>
+
+      <div className="border-b border-line px-5 py-4">
+        <p className="text-[13.5px] font-semibold text-ink">Pronunciations</p>
+        <p className="mt-0.5 max-w-2xl text-[12.5px] leading-snug text-muted">
+          English words the voice says wrongly, and how to write them so it says them right. One
+          per line, as <code className="font-mono">word = spoken form</code>. Spell the spoken form
+          the way it sounds, using ordinary words. A word in capitals, like{" "}
+          <code className="font-mono">IT</code>, only matches in capitals. Applies to the studio and
+          the API; your entries override the built-in ones.
+        </p>
+        <textarea
+          value={pronunciationText}
+          rows={7}
+          spellCheck={false}
+          placeholder={"Copilot = co-pilot\nAI = ay eye\nAzure = azh-er\nSQL = sequel"}
+          onChange={(e) => {
+            setPronunciationText(e.target.value);
+            patch({ pronunciations: parsePronunciations(e.target.value) });
+          }}
+          className="mt-3 w-full max-w-2xl resize-y rounded-xl border border-line bg-white px-3.5 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-brand-600"
+        />
+        <p className="mt-1.5 text-[12px] text-faint">
+          {Object.keys(values.pronunciations ?? {}).length} of 200 entries. Takes effect on the
+          next thing you generate.
+        </p>
+      </div>
 
       <div className="flex items-center justify-between gap-4 bg-surface2 px-5 py-3.5">
         <p className="text-[12.5px] text-muted">

@@ -10,6 +10,7 @@
  * a cold backend can take a minute, so this returns what to poll.
  */
 
+import { getSettings } from "@/lib/server/redis";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { MAX_CHARS } from "@/lib/config";
@@ -80,7 +81,9 @@ export async function POST(req: Request) {
     );
   }
 
-  const drafts = chunkScript(body.text, undefined, language);
+  const drafts = chunkScript(body.text, undefined, language, {
+    pronunciations: (await getSettings()).pronunciations,
+  });
   if (!drafts.length) {
     return apiError("That text has nothing to say once normalized.", 400, "empty_text");
   }

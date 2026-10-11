@@ -308,12 +308,106 @@ function spellLetters(letters: string): string {
   return [...letters].map((c) => LETTER_NAMES[c] ?? c).join(" ");
 }
 
-export function expandSpokenForms(input: string): string {
+/** A word, and how it should be written for the model to say it right. */
+export type Pronunciations = Record<string, string>;
+
+/**
+ * Words the model reads wrongly as written, respelled as ordinary English.
+ *
+ * "Copilot" reaches the model as "copilot" and comes out "cop-i-lot"; the
+ * dictionary spelling "co-pilot" is read correctly. Keys are lowercase and
+ * match in any case. Anything set in Admin → Settings overrides these.
+ */
+const BUILT_IN_PRONUNCIATIONS: Pronunciations = {
+  copilot: "co-pilot",
+  copilots: "co-pilots",
+  autopilot: "auto-pilot",
+  intune: "in-tune",
+  ios: "eye oh ess",
+  macos: "mac oh ess",
+  ipados: "eye-pad oh ess",
+};
+
+export const MAX_PRONUNCIATIONS = 200;
+
+/**
+ * Read the "word = spoken form" list from Admin → Settings.
+ *
+ * One entry per line. Lines without "=" and entries with an empty side are
+ * skipped, never an error — a half-typed line must not block saving.
+ */
+export function parsePronunciations(text: string): Pronunciations {
+  const out: Pronunciations = {};
+  for (const line of text.split(/\r?\n/)) {
+    const at = line.indexOf("=");
+    if (at < 1) continue;
+    const word = line.slice(0, at).trim().slice(0, 40);
+    const spoken = line.slice(at + 1).trim().slice(0, 80);
+    if (!word || !spoken) continue;
+    if (Object.keys(out).length >= MAX_PRONUNCIATIONS) break;
+    out[word] = spoken;
+  }
+  return out;
+}
+
+export function formatPronunciations(map: Pronunciations | undefined): string {
+  return Object.entries(map ?? {})
+    .map(([word, spoken]) => `${word} = ${spoken}`)
+    .join("\n");
+}
+
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * "SharePoint" -> "Share Point".
+ *
+ * The model lowercases its input, so the capital that marked the second word
+ * is gone and "sharepoint", "onedrive" or "powershell" arrive as one unknown
+ * word. Splitting at the capital hands it two words it knows. Only a
+ * lowercase letter followed by a capitalised syllable splits, so ordinary
+ * words, ALL-CAPS and "iOS" are untouched, and "Mc" names are left alone.
+ */
+function splitCamelCase(word: string): string {
+  if (!/[a-z][A-Z][a-z]/.test(word) || /^Mc[A-Z]/.test(word)) return word;
+  return word.replace(/([a-z])(?=[A-Z][a-z])/g, "$1 ");
+}
+
+export function expandSpokenForms(input: string, custom: Pronunciations = {}): string {
   let s = input;
+
+  // Respelled words are parked as private-use markers until the end, so the
+  // rules below cannot re-read a spoken form as something else to expand.
+  const held: string[] = [];
+  const hold = (spoken: string) => {
+    held.push(spoken);
+    return `${held.length - 1}`;
+  };
+
+  // The user's list wins over the built-in one. A key written in capitals
+  // ("IT") only matches in capitals, because the lowercase word is usually a
+  // different word; anything else matches in any case.
+  const entries = new Map<string, { key: string; spoken: string; exact: boolean }>();
+  for (const [key, spoken] of Object.entries(BUILT_IN_PRONUNCIATIONS)) {
+    entries.set(key, { key, spoken, exact: false });
+  }
+  for (const [rawKey, spoken] of Object.entries(custom)) {
+    const key = rawKey.trim();
+    if (!key || !spoken) continue;
+    const exact = key === key.toUpperCase() && /[A-Z]/.test(key);
+    entries.set(exact ? key : key.toLowerCase(), { key, spoken, exact });
+  }
+  const ordered = [...entries.values()].sort((a, b) => b.key.length - a.key.length);
+  for (const { key, spoken, exact } of ordered) {
+    const re = new RegExp(
+      `(?<![\\p{L}\\p{N}])${escapeRegExp(key)}(?![\\p{L}\\p{N}])`,
+      exact ? "gu" : "giu"
+    );
+    s = s.replace(re, () => hold(spoken));
+  }
 
   // "365" in a product name is said "three sixty-five", never "three hundred
   // sixty-five". Runs before number expansion, which would get there first.
-  s = s.replace(/\b(Microsoft|Office|Dynamics|Copilot|Outlook)(\s+)365\b/g, "$1$2three sixty-five");
+  s = s.replace(/(Microsoft|Office|Dynamics|Outlook|)(\s+)365\b/g, "$1$2three sixty-five");
   s = s.replace(/\b([MO])365\b/g, (_m, letter: string) => `${LETTER_NAMES[letter]} three sixty-five`);
 
   // Dotted forms first ("A.I."), so the plain rule below never sees the dots.
@@ -323,7 +417,9 @@ export function expandSpokenForms(input: string): string {
   s = s.replace(new RegExp(String.raw`\b(${SPELLED_INITIALISMS.join("|")})(?=s\b|'s\b|\b)`, "g"),
     (_m, letters: string) => spellLetters(letters));
 
-  return s;
+  s = s.replace(/[A-Za-z]+/g, splitCamelCase);
+
+  return s.replace(/(\d+)/g, (_m, i: string) => held[Number(i)] ?? "");
 }
 
 // ---------------------------------------------------------------------------
@@ -347,6 +443,8 @@ export interface NormalizeOptions {
    * stripping the brackets (which would leave the word to be spoken).
    */
   keepProsodyTags?: boolean;
+  /** Extra "word -> spoken form" pairs from Admin → Settings. English only. */
+  pronunciations?: Pronunciations;
 }
 
 export function normalizeText(
@@ -362,7 +460,7 @@ export function normalizeText(
   s = stripMarkdown(s);
   s = asciiPunctuation(s);
   if (language.startsWith("en")) {
-    s = expandSpokenForms(s); // before numbers so "M365" keeps its own reading
+    s = expandSpokenForms(s, opts.pronunciations); // before numbers so "M365" keeps its own reading
     s = expandAbbreviations(s); // before numbers so "No. 5" → "number 5" → words
     s = expandNumbers(s);
   }

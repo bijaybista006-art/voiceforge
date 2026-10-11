@@ -47,6 +47,8 @@ interface AppState {
   voices: StudioVoice[];
   /** Set when storage isn't connected, so the UI can say what to do. */
   storageHint: string | null;
+  /** "word -> spoken form" pairs from Admin → Settings, used when chunking. */
+  pronunciations: Record<string, string>;
   activeVoiceId: string | null;
   project: Project;
   queue: QueueState;
@@ -276,6 +278,7 @@ export const useApp = create<AppState>((set, get) => {
     connecting: false,
     voices: [],
     storageHint: null,
+    pronunciations: {},
     activeVoiceId: null,
     project: createDefaultProject(),
     queue: {
@@ -359,6 +362,7 @@ export const useApp = create<AppState>((set, get) => {
           connecting: false,
           voices,
           storageHint: status.hint,
+          pronunciations: status.pronunciations ?? {},
           activeVoiceId,
           project: { ...s.project, voiceId: activeVoiceId ?? "" },
           backend: {
@@ -430,7 +434,9 @@ export const useApp = create<AppState>((set, get) => {
 
     setScript(raw: string) {
       if (get().queue.running) return; // editor is locked during a run
-      const drafts = chunkScript(raw, undefined, get().project.params.language);
+      const drafts = chunkScript(raw, undefined, get().project.params.language, {
+        pronunciations: get().pronunciations,
+      });
       set((s) => {
         const chunks = reconcileChunks(drafts, s.project.chunks, s.project.params.seed);
         // clean up stored audio for chunks that no longer exist
