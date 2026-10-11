@@ -216,6 +216,21 @@ NE_SECONDS_SLACK = 3.0
 NE_SECONDS_PER_CHAR_MIN = 0.05
 
 
+def ne_pace(params: Dict[str, Any]) -> float:
+    """How fast finished Nepali audio is played, 1.0 being the model's own speed.
+
+    The model reads Nepali at 13-17 characters a second, which is quick enough
+    that words blur. `pace` slows the finished audio without changing its
+    pitch. It is its own setting, not `speed`: that one belongs to the
+    expressive path and switches a request onto it.
+    """
+    try:
+        pace = float(params.get("pace") or 1.0)
+    except (TypeError, ValueError):
+        return 1.0
+    return min(1.25, max(0.75, pace))
+
+
 def ne_duration_cap(text: str) -> float:
     """Seconds past which a Nepali take has run on beyond its text."""
     return len(text or "") * NE_SECONDS_PER_CHAR_MAX + NE_SECONDS_SLACK

@@ -133,6 +133,10 @@ export interface PlatformSettings {
   defaultLanguage: string;
   /** English words and how to write them so the model says them right. */
   pronunciations: Record<string, string>;
+  /** The same for Nepali: a word, and a spelling the Nepali model reads better. */
+  nepaliPronunciations: Record<string, string>;
+  /** Playback speed of finished Nepali audio. 1 is the model's own pace. */
+  nepaliSpeed: number;
 }
 
 export const DEFAULT_SETTINGS: PlatformSettings = {
@@ -141,6 +145,10 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   defaultModel: "chatterbox",
   defaultLanguage: "en",
   pronunciations: {},
+  nepaliPronunciations: {},
+  // The model reads Nepali at 13-17 characters a second, fast enough to blur
+  // words. A little slower by default; pitch is unchanged.
+  nepaliSpeed: 0.92,
 };
 
 export async function getSettings(): Promise<PlatformSettings> {

@@ -285,6 +285,53 @@ function respell(word: string, lexicon: Record<string, string>): string {
 }
 
 /**
+ * Respell words the Nepali model reads wrongly, from the list in Settings.
+ *
+ * A key may be an English word ("coin") or a Nepali one ("अभिभावक"); the value
+ * is the Devanagari spelling to send instead. A Nepali key matches at the
+ * start of a word and leaves whatever follows it, because Nepali attaches its
+ * case endings: "अभिभावकले" and "अभिभावकहरू" should both be caught by one entry.
+ * Longest keys first, so a longer word is never half-replaced by a shorter one.
+ */
+export function applyNepaliPronunciations(
+  text: string,
+  list?: Record<string, string> | null
+): string {
+  const entries = Object.entries(list ?? {})
+    .map(([k, v]) => [k.trim(), v.trim()] as const)
+    .filter(([k, v]) => k && v && /[\u0900-\u097F]/.test(k))
+    .sort((a, b) => b[0].length - a[0].length);
+  let s = text;
+  const held: string[] = [];
+  for (const [word, spoken] of entries) {
+    const re = new RegExp(`(?<![\\u0900-\\u097F])${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "gu");
+    // Parked until the end so one entry's output is never rewritten by another.
+    s = s.replace(re, () => {
+      held.push(spoken);
+      return `\uE020${held.length - 1}\uE021`;
+    });
+  }
+  return s.replace(/\uE020(\d+)\uE021/g, (_m, i: string) => held[Number(i)] ?? "");
+}
+
+/**
+ * Everything done to Nepali text before it reaches the model: the Settings
+ * list first, then English words respelled in Devanagari. English entries in
+ * the Settings list are used as the lexicon for that second step.
+ */
+export function prepareNepali(
+  text: string,
+  opts: { pronunciations?: Record<string, string> | null; lexicon?: Record<string, string> | null } = {}
+): string {
+  const latin: Record<string, string> = {};
+  for (const [k, v] of Object.entries(opts.pronunciations ?? {})) {
+    if (k && v && !/[\u0900-\u097F]/.test(k)) latin[k] = v;
+  }
+  const respelled = applyNepaliPronunciations(text, opts.pronunciations);
+  return transliterateForNepali(respelled, { ...latin, ...(opts.lexicon ?? {}) });
+}
+
+/**
  * Respell every Latin word in `text` in Devanagari.
  *
  * Text with no Devanagari at all is returned untouched: that is an English

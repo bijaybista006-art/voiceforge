@@ -17,6 +17,11 @@ const schema = z.object({
     .record(z.string().min(1).max(40), z.string().min(1).max(80))
     .refine((m) => Object.keys(m).length <= 200, "at most 200 entries")
     .optional(),
+  nepaliPronunciations: z
+    .record(z.string().min(1).max(40), z.string().min(1).max(80))
+    .refine((m) => Object.keys(m).length <= 200, "at most 200 entries")
+    .optional(),
+  nepaliSpeed: z.number().min(0.75).max(1.25).optional(),
 });
 
 export async function GET() {

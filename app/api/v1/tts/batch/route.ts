@@ -39,6 +39,8 @@ const paramsSchema = z
     model: z.enum(["chatterbox", "qwen3"]).optional(),
     /** Overrides the language profile's engine for this one request. */
     engine: z.string().min(1).max(40).optional(),
+    /** Nepali only: playback speed of the finished audio, pitch unchanged. */
+    pace: z.number().min(0.75).max(1.25).optional(),
     /** Run on this backend only, instead of the first one available. */
     backend: z.enum(["colab", "kaggle", "custom", "modal"]).optional(),
   })

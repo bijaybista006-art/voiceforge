@@ -12,9 +12,10 @@
  */
 
 import { languageForText, resolveSynthesis } from "@/lib/languageProfiles";
-import { transliterateForNepali } from "@/lib/nepaliLoanwords";
+import { prepareNepali } from "@/lib/nepaliLoanwords";
 import type { LibraryVoice, ModelId } from "@/lib/types";
 import { backendHeaders, recordJobUsage, resolveBackend, updateBackend } from "./backends";
+import { getSettings } from "./redis";
 import { resolveVoice } from "./voices";
 
 /** Vercel caps a function at 60 s; stay inside it with room to answer. */
@@ -142,8 +143,11 @@ export async function gatewayGenerate(
   // English words inside a Nepali line are respelled in Devanagari, so one
   // model reads the whole sentence once. See lib/nepaliLoanwords.ts for why
   // this replaced splicing two models together.
-  const text =
-    synth.modelLanguage === "ne" ? transliterateForNepali(input.text) : input.text;
+  const isNepali = synth.modelLanguage === "ne";
+  const settings = isNepali ? await getSettings() : null;
+  const text = isNepali
+    ? prepareNepali(input.text, { pronunciations: settings?.nepaliPronunciations })
+    : input.text;
 
   const payload = {
     text,
@@ -151,6 +155,7 @@ export async function gatewayGenerate(
     model: input.model ?? "chatterbox",
     seed: input.seed ?? 0,
     language: synth.modelLanguage,
+    ...(isNepali ? { pace: settings?.nepaliSpeed ?? 1 } : {}),
     engine: synth.engine,
     fallback: synth.fallback,
     exaggeration: synth.exaggeration,

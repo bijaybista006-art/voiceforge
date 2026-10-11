@@ -43,6 +43,9 @@ export function SettingsForm({
   const [pronunciationText, setPronunciationText] = useState(() =>
     formatPronunciations(initial.pronunciations)
   );
+  const [nepaliText, setNepaliText] = useState(() =>
+    formatPronunciations(initial.nepaliPronunciations)
+  );
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
 
@@ -159,6 +162,54 @@ export function SettingsForm({
         <p className="mt-1.5 text-[12px] text-faint">
           {Object.keys(values.pronunciations ?? {}).length} of 200 entries. Takes effect on the
           next thing you generate.
+        </p>
+      </div>
+
+      <Field
+        label="Nepali speed"
+        hint="How fast finished Nepali narration plays. Lower is slower and clearer; the pitch does not change."
+      >
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min={0.75}
+            max={1.1}
+            step={0.01}
+            value={values.nepaliSpeed ?? 0.92}
+            onChange={(e) => patch({ nepaliSpeed: Number(e.target.value) })}
+            className="w-44"
+            aria-label="Nepali speed"
+          />
+          <span className="font-mono text-[13px] tabular-nums text-ink">
+            {Math.round((values.nepaliSpeed ?? 0.92) * 100)}%
+          </span>
+          <span className="text-[12px] text-faint">100% is the model&apos;s own pace</span>
+        </div>
+      </Field>
+
+      <div className="border-b border-line px-5 py-4">
+        <p className="text-[13.5px] font-semibold text-ink">Nepali pronunciations</p>
+        <p className="mt-0.5 max-w-2xl text-[12.5px] leading-snug text-muted">
+          Words the Nepali voice says wrongly, and a spelling it reads better. One per line, as{" "}
+          <code className="font-mono">word = spelling</code>. The word can be Nepali or English;
+          the spelling is always in Devanagari. A Nepali word also matches with its endings
+          attached, so <code className="font-mono">अभिभावक</code> covers{" "}
+          <code className="font-mono">अभिभावकले</code> too. Finding a spelling that works is trial
+          and error: try splitting the word with a hyphen or a space where it should break.
+        </p>
+        <textarea
+          value={nepaliText}
+          rows={7}
+          spellCheck={false}
+          placeholder={"coin = क्वाइन\nअभिभावक = अभि-भावक"}
+          onChange={(e) => {
+            setNepaliText(e.target.value);
+            patch({ nepaliPronunciations: parsePronunciations(e.target.value) });
+          }}
+          className="mt-3 w-full max-w-2xl resize-y rounded-xl border border-line bg-white px-3.5 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-brand-600"
+        />
+        <p className="mt-1.5 text-[12px] text-faint">
+          {Object.keys(values.nepaliPronunciations ?? {}).length} of 200 entries.
         </p>
       </div>
 

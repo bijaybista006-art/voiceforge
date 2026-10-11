@@ -19,7 +19,7 @@
 
 import { after } from "next/server";
 import { resolveSynthesis } from "@/lib/languageProfiles";
-import { transliterateForNepali } from "@/lib/nepaliLoanwords";
+import { prepareNepali } from "@/lib/nepaliLoanwords";
 import type { BackendProvider, LibraryVoice, VideoChapterSpan } from "@/lib/types";
 import {
   backendHeaders,
@@ -360,6 +360,9 @@ export async function createAndDispatchJob(
   const wantsRefs = p.code_switch === true || p.prosody_tags === true;
   const voiceRefs = wantsRefs ? await resolveVoiceRefs(voice) : undefined;
 
+  // Nepali only: the pronunciation list and the playback pace from Settings.
+  const neSettings = synth.modelLanguage === "ne" ? await getSettings() : null;
+
   const body = {
     job_id: id,
     voice_id: input.voiceId,
@@ -387,11 +390,16 @@ export async function createAndDispatchJob(
     chunks:
       synth.modelLanguage === "ne" && p.code_switch !== true
         ? input.chunks.map((c) =>
-            transliterateForNepali(c, p.lexicon as Record<string, string> | undefined)
+            prepareNepali(c, {
+              pronunciations: neSettings?.nepaliPronunciations,
+              lexicon: p.lexicon as Record<string, string> | undefined,
+            })
           )
         : input.chunks,
     paragraph_breaks: input.paragraphBreaks,
     params: {
+      // A request's own pace wins; otherwise Nepali uses the one in Settings.
+      ...(neSettings ? { pace: neSettings.nepaliSpeed ?? 1 } : {}),
       ...input.params,
       language: synth.modelLanguage,
       exaggeration: synth.exaggeration,

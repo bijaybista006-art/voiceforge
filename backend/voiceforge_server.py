@@ -45,6 +45,7 @@ try:
         NE_MAX_CHUNK_CHARS,
         ne_cut_runaway,
         ne_duration_cap,
+        ne_pace,
         ne_split_for_retry,
         EngineUnavailable,
         DEFAULT_ENGINE,
@@ -73,6 +74,7 @@ except ImportError:  # pragma: no cover - notebook layout
         NE_MAX_CHUNK_CHARS,
         ne_cut_runaway,
         ne_duration_cap,
+        ne_pace,
         ne_split_for_retry,
         EngineUnavailable,
         DEFAULT_ENGINE,
@@ -212,6 +214,15 @@ def _patch_stream_analyzer() -> None:
             # before most of the expected speech exists.
             frames = int(getattr(self, "curr_frame_pos", 0))
             done_at = getattr(self, "completed_at", None)
+            # Where in the text the model is, frame by frame. Kept so the end
+            # of a take can be judged against what was actually being said
+            # at each moment, not against loudness alone.
+            trace = _LAST_ALIGN.setdefault("trace", [])
+            try:
+                trace.append(int(self.text_position))
+                _LAST_ALIGN["text_tokens"] = int(self.alignment.shape[1])
+            except Exception:  # noqa: BLE001
+                pass
             _LAST_ALIGN.update(
                 {
                     "frames": frames,
@@ -713,6 +724,9 @@ def _generate_chunk(
                 "dropped_tokens": _LAST_STOP.get("dropped") or None,
                 "frames": _LAST_ALIGN.get("frames"),
                 "text_done_at": _LAST_ALIGN.get("completed_at"),
+                "text_tokens": _LAST_ALIGN.get("text_tokens"),
+                # The last second and a half: which text token each frame was on.
+                "align_tail": (_LAST_ALIGN.get("trace") or [])[-40:] or None,
                 "exaggeration": float(exaggeration),
                 "cfg": float(cfg),
                 "temperature": float(temperature),
@@ -1194,10 +1208,14 @@ def _run_job(job: Dict[str, Any]) -> None:
                         },
                         seed=int(params.get("seed", 0)) + i,
                     )
+                    # Pace is applied after the take is finished and judged, so
+                    # the length checks above always see the model's own speed.
+                    audio = change_rate(audio, sr, ne_pace(params))
                     rendered.append(audio)
                     diag.append(
                         {
                             **_LAST_GEN,
+                            "pace": ne_pace(params),
                             "raw_audio": _LAST_GEN.get("audio"),
                             "audio": round(len(audio) / max(1, sr), 2),
                             "takes": takes,
@@ -1540,6 +1558,7 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
                         seed=int(p.get("seed", 0)),
                     )
                     _BUSY = False
+                audio = change_rate(audio, sr, ne_pace(p))
                 return {
                     "audio_b64": _wav_b64(audio, sr),
                     "sample_rate": sr,

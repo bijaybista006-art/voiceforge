@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { approximateInDevanagari, transliterateForNepali } from "../nepaliLoanwords";
+import {
+  applyNepaliPronunciations,
+  approximateInDevanagari,
+  prepareNepali,
+  transliterateForNepali,
+} from "../nepaliLoanwords";
 
 const LATIN = /[A-Za-z]/;
 
@@ -45,5 +50,45 @@ describe("transliterateForNepali", () => {
   it("does not touch an English line or a pure Nepali one", () => {
     expect(transliterateForNepali("Thank you, and stay safe!")).toBe("Thank you, and stay safe!");
     expect(transliterateForNepali("नमस्ते साथीहरू।")).toBe("नमस्ते साथीहरू।");
+  });
+});
+
+describe("the Nepali pronunciation list", () => {
+  it("respells a Nepali word, and keeps the ending attached to it", () => {
+    const list = { "अभिभावक": "अभि-भावक" };
+    expect(applyNepaliPronunciations("अभिभावक र अभिभावकले", list)).toBe("अभि-भावक र अभि-भावकले");
+  });
+
+  it("does not touch the same letters in the middle of another word", () => {
+    const list = { "भावक": "भा-वक" };
+    expect(applyNepaliPronunciations("अभिभावक", list)).toBe("अभिभावक");
+  });
+
+  it("prefers the longer entry when two overlap", () => {
+    const list = { "अपरिचित": "अ-परिचित", "अपरिचित व्यक्ति": "अ-परिचित ब्यक्ति" };
+    expect(applyNepaliPronunciations("अपरिचित व्यक्तिलाई", list)).toBe("अ-परिचित ब्यक्तिलाई");
+  });
+
+  it("never rewrites its own output", () => {
+    // If the spelling contains another entry's word, it is left as written.
+    const list = { "क": "ख", "ख": "ग" };
+    expect(applyNepaliPronunciations("क ख", list)).toBe("ख ग");
+  });
+
+  it("uses English entries when respelling English words", () => {
+    const out = prepareNepali("मेरो coin हरायो", { pronunciations: { coin: "क्वाइन" } });
+    expect(out).toBe("मेरो क्वाइन हरायो");
+  });
+
+  it("lets a request's own lexicon win over the list", () => {
+    const out = prepareNepali("मेरो coin", {
+      pronunciations: { coin: "क्वाइन" },
+      lexicon: { coin: "कोइन" },
+    });
+    expect(out).toBe("मेरो कोइन");
+  });
+
+  it("leaves text alone when the list is empty", () => {
+    expect(prepareNepali("नमस्ते साथीहरू।")).toBe("नमस्ते साथीहरू।");
   });
 });

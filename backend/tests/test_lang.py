@@ -19,6 +19,7 @@ from backend.voiceforge_lang import (  # noqa: E402
     ne_cut_runaway,
     ne_duration_cap,
     ne_merge_short,
+    ne_pace,
     ne_split_for_retry,
     ne_expand_digits,
     ne_prepare,
@@ -242,3 +243,19 @@ class TestRunawayGuard:
         take = (0.5 * np.sin(2 * np.pi * 220 * np.arange(40 * sr) / sr)).astype(np.float32)
         cut = ne_cut_runaway(take, sr, "क" * 100)
         assert len(cut) / sr == pytest.approx(ne_duration_cap("क" * 100), abs=0.1)
+
+
+class TestPace:
+    def test_absent_means_the_models_own_speed(self):
+        assert ne_pace({}) == 1.0
+        assert ne_pace({"pace": None}) == 1.0
+
+    def test_it_is_read_from_the_request(self):
+        assert ne_pace({"pace": 0.9}) == 0.9
+
+    def test_it_is_kept_inside_a_range_that_still_sounds_like_speech(self):
+        assert ne_pace({"pace": 0.2}) == 0.75
+        assert ne_pace({"pace": 3}) == 1.25
+
+    def test_nonsense_is_ignored(self):
+        assert ne_pace({"pace": "slow"}) == 1.0
