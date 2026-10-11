@@ -87,6 +87,19 @@ export interface Job {
   engineUsed?: string;
   /** Per-chunk facts from the backend, for diagnosing a bad render. */
   diagnostics?: Record<string, unknown>;
+  /**
+   * Presenter clips only: which presenter, and — for a clip made from text —
+   * the narration job it is waiting on and how to continue once that is done.
+   */
+  presenter?: {
+    id: string;
+    kind: "recording" | "image";
+    audioJobId?: string;
+    appUrl?: string;
+    steps?: number;
+    guidance?: number;
+    seed?: number;
+  };
   /** 0-100 while rendering, so a long job isn't a black box. */
   progress?: number;
   stage?: string;

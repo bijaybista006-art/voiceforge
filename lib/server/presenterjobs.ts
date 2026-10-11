@@ -9,12 +9,23 @@
  * slideshow render that needs the clip next.
  */
 
-import type { BackendProvider, BackendView, Presenter } from "@/lib/types";
+import { chunkScript } from "@/lib/chunker";
+import { DEFAULT_PARAMS } from "@/lib/config";
+import type { BackendProvider, BackendView, LibraryVoice, Presenter } from "@/lib/types";
 import { backendHeaders, getBackend, listBackends, updateBackend } from "./backends";
 import { putBlob } from "./blob";
-import { JobError, callbackToken, saveJob, type Job } from "./jobs";
+import {
+  JobError,
+  callbackToken,
+  createAndDispatchJob,
+  getJob,
+  reconcileJob,
+  saveJob,
+  type Job,
+} from "./jobs";
 import { presenterCapability, resolvePresenter, usablePresenterBackends } from "./presenters";
 import { kvGet, kvSet } from "./redis";
+import { resolveVoice } from "./voices";
 
 const INDEX = "vf:jobs";
 const INDEX_LIMIT = 200;
@@ -96,33 +107,55 @@ export async function discoverMissingPresenters(timeoutMs = 15_000): Promise<boo
   return found.some((caps) => caps.length > 0);
 }
 
-export interface PresenterJobInput {
+export interface PresenterOptions {
+  steps?: number;
+  guidance?: number;
+  seed?: number;
+}
+
+export interface PresenterJobInput extends PresenterOptions {
   /** Omit to use the default presenter. */
   presenterId?: string | null;
   /** The narration the presenter should speak. */
   audioUrl: string;
-  steps?: number;
-  guidance?: number;
-  seed?: number;
   source: string;
   callbackUrl?: string;
 }
 
-export async function createAndDispatchPresenter(
-  input: PresenterJobInput,
-  appUrl: string
-): Promise<{ job: Job; presenter: Presenter }> {
-  const presenter = await resolvePresenter(input.presenterId ?? null);
+export interface PresenterTextInput extends PresenterOptions {
+  presenterId?: string | null;
+  /** What the presenter should say. Narrated first, then lip-synced. */
+  text: string;
+  /** Omit to use the default voice. */
+  voiceId?: string | null;
+  /** Omit to use the voice's own language. */
+  language?: string;
+  source: string;
+  callbackUrl?: string;
+}
+
+/**
+ * A presenter line is an intro or an outro. The engine refuses audio past 90
+ * seconds; this keeps the text comfortably inside that, so the limit is met
+ * here with a clear message rather than on a billed GPU four minutes in.
+ */
+export const MAX_PRESENTER_TEXT_CHARS = 900;
+
+async function requirePresenter(presenterId?: string | null): Promise<Presenter> {
+  const presenter = await resolvePresenter(presenterId ?? null);
   if (!presenter) {
     throw new JobError(
-      input.presenterId
-        ? `No presenter with id "${input.presenterId}". GET /api/v1/presenters lists them.`
+      presenterId
+        ? `No presenter with id "${presenterId}". GET /api/v1/presenters lists them.`
         : "No presenter_id given and no default presenter is set. Add one in Admin → Presenters.",
-      input.presenterId ? 404 : 400,
+      presenterId ? 404 : 400,
       "unknown_presenter"
     );
   }
+  return presenter;
+}
 
+async function requireTargets(presenter: Presenter): Promise<BackendView[]> {
   let targets = await usablePresenterBackends(presenter.kind);
   if (!targets.length && (await discoverMissingPresenters(25_000))) {
     targets = await usablePresenterBackends(presenter.kind);
@@ -136,43 +169,62 @@ export async function createAndDispatchPresenter(
       "no_presenter_backend"
     );
   }
+  return targets;
+}
 
+async function newPresenterJob(
+  first: BackendView,
+  source: string,
+  callbackUrl: string | undefined,
+  extra: Partial<Job>
+): Promise<Job> {
   const id = crypto.randomUUID();
   const now = Date.now();
-  let job: Job = {
+  const job: Job = {
     id,
     status: "queued",
     kind: "presenter",
     mode: "stitch",
     format: "mp3",
     voiceId: "",
-    source: input.source,
+    source,
     chars: 0,
     chunks: 1,
     createdAt: now,
     updatedAt: now,
-    backend: targets[0].provider,
-    backendUrl: presenterUrlOf(targets[0]),
-    callbackUrl: input.callbackUrl,
+    backend: first.provider,
+    callbackUrl,
+    ...extra,
   };
   await saveJob(job);
   await kvSet(
     INDEX,
     [id, ...((await kvGet<string[]>(INDEX)) ?? []).filter((x) => x !== id)].slice(0, INDEX_LIMIT)
   );
+  return job;
+}
 
+/** Hand a presenter job to the first backend that accepts it. */
+async function dispatchPresenter(
+  job: Job,
+  presenter: Presenter,
+  targets: BackendView[],
+  audioUrl: string,
+  appUrl: string,
+  opts: PresenterOptions
+): Promise<Job> {
   const body = {
-    job_id: id,
+    job_id: job.id,
     kind: presenter.kind,
     capability: presenterCapability(presenter.kind),
     video_url: presenter.kind === "recording" ? presenter.url : undefined,
     image_url: presenter.kind === "image" ? presenter.url : undefined,
-    audio_url: input.audioUrl,
-    steps: input.steps,
-    guidance: input.guidance,
-    seed: input.seed,
-    callback_url: `${appUrl.replace(/\/+$/, "")}/api/internal/jobs/${id}/complete`,
-    callback_token: await callbackToken(id),
+    audio_url: audioUrl,
+    steps: opts.steps,
+    guidance: opts.guidance,
+    seed: opts.seed,
+    callback_url: `${appUrl.replace(/\/+$/, "")}/api/internal/jobs/${job.id}/complete`,
+    callback_token: await callbackToken(job.id),
   };
 
   // Standard order, first one that accepts — the same rule voice follows.
@@ -192,16 +244,164 @@ export async function createAndDispatchPresenter(
         const detail = await res.text().catch(() => "");
         throw new Error(`backend returned ${res.status} ${detail.slice(0, 200)}`);
       }
-      job = await saveJob({ ...job, backend: t.provider, backendUrl: url, status: "running" });
-      return { job, presenter };
+      return saveJob({
+        ...job,
+        backend: t.provider,
+        backendUrl: url,
+        status: "running",
+        stage: "lip-syncing",
+      });
     } catch (e) {
       failures.push(
         `${t.provider}: ${e instanceof Error ? e.message : "could not reach the presenter backend"}`
       );
     }
   }
-  job = await saveJob({ ...job, status: "error", error: failures.join("; ") });
-  throw new JobError(`Couldn't start the presenter clip on ${job.error}`, 502, "dispatch_failed");
+  const failed = await saveJob({ ...job, status: "error", error: failures.join("; ") });
+  throw new JobError(`Couldn't start the presenter clip on ${failed.error}`, 502, "dispatch_failed");
+}
+
+/** A presenter speaking audio that already exists. */
+export async function createAndDispatchPresenter(
+  input: PresenterJobInput,
+  appUrl: string
+): Promise<{ job: Job; presenter: Presenter }> {
+  const presenter = await requirePresenter(input.presenterId);
+  const targets = await requireTargets(presenter);
+  const job = await newPresenterJob(targets[0], input.source, input.callbackUrl, {
+    presenter: { id: presenter.id, kind: presenter.kind },
+  });
+  const running = await dispatchPresenter(job, presenter, targets, input.audioUrl, appUrl, input);
+  return { job: running, presenter };
+}
+
+/**
+ * A presenter speaking text: narrate it, then lip-sync the result.
+ *
+ * Two GPU steps that cannot share one request, so this starts the narration
+ * and records what should happen next. The second step is taken the first
+ * time the job is polled after the narration finishes — see
+ * reconcilePresenter. Nothing has to stay running in between, which is what a
+ * platform with no always-on worker needs.
+ *
+ * The presenter and a backend able to render it are both checked up front, so
+ * a request that could never finish fails now instead of after a narration
+ * has been paid for.
+ */
+export async function createPresenterFromText(
+  input: PresenterTextInput,
+  appUrl: string
+): Promise<{ job: Job; presenter: Presenter; voice: LibraryVoice }> {
+  const text = input.text.trim();
+  if (!text) throw new JobError("There is no text to speak.", 400, "empty_text");
+  if (text.length > MAX_PRESENTER_TEXT_CHARS) {
+    throw new JobError(
+      `That text is ${text.length} characters. A presenter clip is an intro or outro — keep it under ${MAX_PRESENTER_TEXT_CHARS}.`,
+      400,
+      "text_too_long"
+    );
+  }
+
+  const presenter = await requirePresenter(input.presenterId);
+  const targets = await requireTargets(presenter);
+
+  const voice = await resolveVoice(input.voiceId ?? null);
+  if (!voice) {
+    throw new JobError(
+      input.voiceId
+        ? `No voice with id "${input.voiceId}". GET /api/v1/voices lists them.`
+        : "No voice_id given and no default voice is set. Add one in Admin → Voices.",
+      input.voiceId ? 404 : 400,
+      "unknown_voice"
+    );
+  }
+
+  const language = input.language ?? voice.language;
+  const drafts = chunkScript(text, undefined, language);
+  if (!drafts.length) {
+    throw new JobError("That text has nothing to say once normalized.", 400, "empty_text");
+  }
+
+  // The narration is an ordinary TTS job, made exactly as /api/v1/tts makes
+  // one. WAV, because it is about to be encoded again inside a video.
+  const audio = await createAndDispatchJob(
+    {
+      chunks: drafts.map((d) => d.text),
+      paragraphBreaks: drafts.map((d) => d.isParagraphEnd),
+      voiceId: voice.id,
+      mode: "stitch",
+      format: "wav",
+      source: input.source,
+      params: { ...DEFAULT_PARAMS, language },
+    },
+    appUrl
+  );
+
+  const job = await newPresenterJob(targets[0], input.source, input.callbackUrl, {
+    stage: "narrating",
+    voiceId: voice.id,
+    chars: text.length,
+    presenter: {
+      id: presenter.id,
+      kind: presenter.kind,
+      audioJobId: audio.id,
+      appUrl,
+      steps: input.steps,
+      guidance: input.guidance,
+      seed: input.seed,
+    },
+  });
+  return { job, presenter, voice };
+}
+
+/**
+ * Take the second step of a text job once its narration is ready.
+ *
+ * Returns the job unchanged while the narration is still running, an errored
+ * job if the narration failed, and a dispatched job once it has finished.
+ */
+async function advanceFromNarration(job: Job): Promise<Job> {
+  const plan = job.presenter;
+  if (!plan?.audioJobId) return job;
+
+  let audio = await getJob(plan.audioJobId);
+  if (!audio) {
+    return saveJob({ ...job, status: "error", error: "the narration job disappeared" });
+  }
+  if (audio.status === "running" || audio.status === "queued") {
+    audio = await reconcileJob(audio);
+  }
+  if (audio.status === "error") {
+    return saveJob({
+      ...job,
+      status: "error",
+      error: `the narration failed: ${audio.error ?? "unknown error"}`,
+    });
+  }
+  if (audio.status !== "done" || !audio.audioUrl) return job;
+
+  try {
+    const presenter = await requirePresenter(plan.id);
+    const targets = await requireTargets(presenter);
+    return await dispatchPresenter(
+      { ...job, audioUrl: audio.audioUrl },
+      presenter,
+      targets,
+      audio.audioUrl,
+      plan.appUrl ?? "",
+      plan
+    );
+  } catch (e) {
+    // dispatchPresenter has already recorded its own failure; anything else
+    // (the presenter was deleted meanwhile, no backend left) is recorded here.
+    const latest = await getJob(job.id);
+    if (latest?.status === "error") return latest;
+    return saveJob({
+      ...job,
+      status: "error",
+      error: e instanceof Error ? e.message : "could not start the lip-sync",
+    });
+  }
 }
 
 interface PresenterResult {
@@ -261,7 +461,10 @@ export async function completePresenter(job: Job, result: PresenterResult): Prom
 
 /** Ask the backend how a clip is doing — the lost-callback safety net. */
 export async function reconcilePresenter(job: Job): Promise<Job> {
-  if (job.status === "done" || job.status === "error" || !job.backendUrl) return job;
+  if (job.status === "done" || job.status === "error") return job;
+  // A text job that has not reached a backend yet is still on its first
+  // step: waiting for its narration.
+  if (!job.backendUrl) return advanceFromNarration(job);
 
   if (Date.now() - job.createdAt > PRESENTER_STALE_AFTER_MS) {
     return saveJob({

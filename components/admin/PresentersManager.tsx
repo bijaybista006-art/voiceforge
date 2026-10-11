@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import type { PresenterKind, PresenterSource, PresenterView } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
+import { CopyId } from "@/components/ui/CopyId";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import {
@@ -177,7 +178,11 @@ export function PresentersManager() {
                     {p.durationSec ? ` · ${p.durationSec.toFixed(1)}s` : ""}
                     {` · ${SOURCE_LABEL[p.source]}`}
                   </p>
-                  <p className="mt-1 break-all font-mono text-[11px] text-faint">{p.id}</p>
+                  {/* The id a workflow sends as presenter_id — shown in full and
+                      copyable, like a voice id. */}
+                  <div className="mt-2">
+                    <CopyId id={p.id} label="Presenter" />
+                  </div>
                   <p className={`mt-2 text-[12px] ${ready.ready ? "text-muted" : "text-live"}`}>
                     {ready.ready
                       ? `Would render on ${ready.provider}.`
