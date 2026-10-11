@@ -139,9 +139,12 @@ _TAIL_RULE = {"frames": 0, "min_frames": 0}
 # Which loaded model produced the last take ("chatterbox-ne" or the fallback).
 _TAIL_SEEN = {"model": ""}
 # How long the Nepali model may keep going once it has reached the end of its
-# text. The last syllable and the danda still have to be spoken after that
-# point — about five frames — so ten leaves room and no more.
-NE_TAIL_FRAMES = int(os.environ.get("VOICEFORGE_NE_TAIL_FRAMES", "10") or 0)
+# text. Measured on seven takes at 40 ms a frame: by the frame the check
+# reports "finished", the speech is already over — every frame after it was
+# quiet — and in two of the seven a stray blip of sound began five to seven
+# frames later. Four frames keeps a margin for a slow last syllable and ends
+# the take before that blip can start.
+NE_TAIL_FRAMES = int(os.environ.get("VOICEFORGE_NE_TAIL_FRAMES", "4") or 0)
 
 
 def _patch_stream_analyzer() -> None:
