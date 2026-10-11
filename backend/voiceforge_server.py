@@ -31,6 +31,7 @@ import base64
 import io
 import os
 import re
+import sys
 import threading
 import time
 import traceback
@@ -1220,11 +1221,12 @@ def _run_job(job: Dict[str, Any]) -> None:
     except Exception as e:
         _BUSY = False
         err = f"{e}\n{traceback.format_exc()[-1200:]}"
+        told = _note_failure(e)
         with _JOB_LOCK:
-            JOBS[job_id].update({"status": "error", "error": str(e)[:600]})
+            JOBS[job_id].update({"status": "error", "error": told})
         if callback_url:
             try:
-                _post_json(callback_url, {"job_id": job_id, "status": "error", "error": str(e)[:600]}, token)
+                _post_json(callback_url, {"job_id": job_id, "status": "error", "error": told}, token)
             except Exception:
                 pass
         print("[job]", job_id, "failed:", err, flush=True)
@@ -1233,6 +1235,49 @@ def _run_job(job: Dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 # app
 # ---------------------------------------------------------------------------
+
+# Set once a CUDA device-side assert has been seen. That error does not just
+# fail one take: it leaves the process's CUDA context unusable, so every job
+# after it fails the same way until the notebook is restarted. Carrying on
+# accepting work would turn one bad take into a backend that fails everything
+# while still looking online.
+_GPU_BROKEN: Dict[str, str] = {}
+
+
+def _where(limit: int = 6) -> str:
+    """The innermost frames of the current exception, as "file:line function".
+
+    A CUDA error's message is the same wherever it happened. Which call it
+    surfaced in is the only clue to the cause, and it used to exist only in
+    the notebook's own output.
+    """
+    frames = traceback.extract_tb(sys.exc_info()[2])[-limit:]
+    return " > ".join(f"{os.path.basename(f.filename)}:{f.lineno} {f.name}" for f in frames)
+
+
+def _note_failure(e: BaseException) -> str:
+    """Describe a failed take, and notice when it has broken the GPU session."""
+    text = str(e)
+    where = _where()
+    # Only this one. An out-of-memory error also says "CUDA", and the session
+    # survives it.
+    if "device-side assert" in text:
+        _GPU_BROKEN["why"] = f"{text.splitlines()[0][:160]} (at {where})"
+        return (
+            "This backend's GPU session failed and it is now refusing work until its "
+            f"notebook is restarted. {_GPU_BROKEN['why']}"
+        )[:900]
+    return f"{text[:500]} (at {where})"[:900]
+
+
+def _refuse_if_gpu_broken() -> None:
+    if _GPU_BROKEN:
+        # 503, so the gateway hands the job to the next backend in line.
+        raise HTTPException(
+            status_code=503,
+            detail="GPU session broken, restart this notebook: " + _GPU_BROKEN["why"][:300],
+        )
+
 
 RAW_BASE = os.environ.get(
     "VOICEFORGE_RAW_BASE", "https://raw.githubusercontent.com/waytobijay/Bbox-Audio/main/backend"
@@ -1329,6 +1374,7 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
             "voices_cached": list(VOICES.keys()),
             "busy": _BUSY,
             "version": VERSION,
+            **({"gpu_broken": _GPU_BROKEN["why"]} if _GPU_BROKEN else {}),
             "capabilities": ["tts"] + (["render"] if render_mounted else []),
         }
 
@@ -1353,6 +1399,7 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
     async def generate(request: Request, x_backend_secret: Optional[str] = Header(None)):
         global _BUSY
         _check(x_backend_secret)
+        _refuse_if_gpu_broken()
         p = await request.json()
         try:
             # Same engine resolution as the job worker. Without it the studio
@@ -1405,7 +1452,10 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
             return JSONResponse({"error": "voice_not_cached"}, status_code=409)
         except Exception as e:
             _BUSY = False
-            return JSONResponse({"error": str(e)[:600]}, status_code=500)
+            told = _note_failure(e)
+            # 503 once the session is broken, so the studio's next chunk goes
+            # to another backend instead of failing here again.
+            return JSONResponse({"error": told}, status_code=503 if _GPU_BROKEN else 500)
 
         return {
             "audio_b64": _wav_b64(audio, sr),
@@ -1417,6 +1467,7 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
     @app.post("/jobs", status_code=202)
     async def create_job(request: Request, x_backend_secret: Optional[str] = Header(None)) -> dict:
         _check(x_backend_secret)
+        _refuse_if_gpu_broken()
         job = await request.json()
         job_id = job["job_id"]
         with _JOB_LOCK:

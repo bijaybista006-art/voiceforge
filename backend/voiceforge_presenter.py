@@ -273,13 +273,10 @@ def _gpu_name() -> str:
 
 
 def _engine_env() -> Dict[str, str]:
-    env = dict(os.environ)
+    env = _clean_env()
     index = engine_gpu_index(len(_gpus()), os.environ.get("VOICEFORGE_PRESENTER_GPU"))
     if index is not None:
         env["CUDA_VISIBLE_DEVICES"] = index
-    # The notebook kernel's own Python packages must not leak into the
-    # engine's virtualenv.
-    env.pop("PYTHONPATH", None)
     return env
 
 
@@ -350,12 +347,40 @@ print("weights ready")
 '''
 
 
+# The engine's own setup script creates a Python 3.10 environment, and that is
+# what the Modal image uses. A notebook's Python is whatever the host ships —
+# newer, and with host-specific startup hooks — and the engine's pinned
+# libraries have no builds for it.
+ENGINE_PYTHON_VERSION = "3.10"
+
+
+def _clean_env() -> Dict[str, str]:
+    """The notebook's environment minus what would leak its Python into ours.
+
+    Kaggle sets PYTHONPATH to a directory holding a sitecustomize that imports
+    packages the engine's environment does not have, which made every Python
+    start-up in the new environment print an error.
+    """
+    env = dict(os.environ)
+    for name in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "VIRTUAL_ENV", "PIP_REQUIRE_VIRTUALENV"):
+        env.pop(name, None)
+    return env
+
+
 def _step(stage: str, cmd: List[str], cwd: Optional[str] = None, timeout: int = 60 * 45) -> None:
     INSTALL["stage"] = stage
     print(f"[presenter] install: {stage}", flush=True)
-    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    proc = subprocess.run(
+        cmd, cwd=cwd, env=_clean_env(), capture_output=True, text=True, timeout=timeout
+    )
     if proc.returncode != 0:
-        raise RuntimeError(f"{stage} failed: {tail_of(proc.stderr or proc.stdout, 500)}")
+        # pip reports the reason last and its warnings first; keep the end,
+        # and drop the start-up noise that is not the failure.
+        lines = [
+            line for line in (proc.stderr or proc.stdout or "").splitlines()
+            if "sitecustomize" not in line and "PYTHONVERBOSE" not in line
+        ]
+        raise RuntimeError(f"{stage} failed: {tail_of(chr(10).join(lines), 700)}")
 
 
 def _install_engine() -> None:
@@ -378,12 +403,17 @@ def _install_engine() -> None:
                   ["git", "checkout", "--quiet", LATENTSYNC_COMMIT], cwd=engine_dir)
 
             if not os.path.exists(python):
-                # virtualenv, not `python -m venv`: notebook images often ship
-                # Python without ensurepip, where venv cannot bootstrap pip.
-                _step("preparing an isolated Python",
-                      [sys.executable, "-m", "pip", "install", "--quiet", "virtualenv"])
-                _step("creating the environment",
-                      [sys.executable, "-m", "virtualenv", "--quiet", venv])
+                # uv fetches a standalone Python of the version the engine was
+                # built for, so the install no longer depends on which Python
+                # the notebook host happens to run. --seed puts pip in the
+                # environment; the libraries are then installed with pip,
+                # exactly as on Modal, where this set is known to resolve.
+                shutil.rmtree(venv, ignore_errors=True)
+                _step("getting an installer",
+                      [sys.executable, "-m", "pip", "install", "--quiet", "uv"])
+                _step(f"creating a Python {ENGINE_PYTHON_VERSION} environment",
+                      [sys.executable, "-m", "uv", "venv", "--seed",
+                       "--python", ENGINE_PYTHON_VERSION, venv])
 
             # The engine's own requirements, minus its demo UI.
             reqs = os.path.join(INSTALL_ROOT, "requirements.txt")
