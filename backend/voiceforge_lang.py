@@ -303,10 +303,18 @@ def ne_trim_trailing_blip(audio, sr: int, gap: float = 0.12, window: float = 0.8
     loud = rms >= peak * 10 ** (-18 / 20)
     quiet = rms < peak * 10 ** (-30 / 20)
     first = max(0, len(rms) - int(window * sr / n))
-    loud_idx = _np.flatnonzero(loud)
-    if not len(loud_idx):
+    # The end of real speech is the end of the last loud stretch of at least
+    # 80 ms. A syllable is longer than that; a click or a stray blip can be
+    # loud too, but only for a frame or two, and must not count as speech.
+    last_loud = -1
+    run_len = 0
+    for i in range(len(rms)):
+        run_len = run_len + 1 if loud[i] else 0
+        if run_len >= 4:
+            last_loud = i
+    if last_loud < 0:
         return audio
-    last_loud = max(int(loud_idx[-1]), first)
+    last_loud = max(last_loud, first)
     need = max(1, int(round(gap * sr / n)))
     run = 0
     for i in range(last_loud + 1, len(rms)):

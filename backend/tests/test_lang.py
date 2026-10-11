@@ -314,3 +314,12 @@ class TestTrailingBlip:
         sr = 24000
         clip = np.concatenate([self._tone(2.0), self._quiet(0.3), self._tone(0.3, 0.5)])
         assert len(ne_trim_trailing_blip(clip, sr)) == len(clip)
+
+    def test_a_loud_click_after_a_pause_is_not_speech(self):
+        import numpy as np
+
+        sr = 24000
+        # 40 ms is too short to be a syllable, however loud it is.
+        clip = np.concatenate([self._tone(2.0), self._quiet(0.2), self._tone(0.04, 0.5), self._quiet(0.04)])
+        out = ne_trim_trailing_blip(clip, sr)
+        assert 2.0 <= len(out) / sr < 2.12
