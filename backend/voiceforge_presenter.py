@@ -364,7 +364,22 @@ def _clean_env() -> Dict[str, str]:
     env = dict(os.environ)
     for name in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "VIRTUAL_ENV", "PIP_REQUIRE_VIRTUALENV"):
         env.pop(name, None)
+    # A notebook kernel sets MPLBACKEND to its inline backend, which only
+    # exists inside Jupyter. The engine imports matplotlib at start-up, and
+    # with that value inherited it refused to start at all.
+    env["MPLBACKEND"] = "Agg"
     return env
+
+
+def _is_python(python: str, version: str) -> bool:
+    try:
+        out = subprocess.run(
+            [python, "-c", "import sys; print('%d.%d' % sys.version_info[:2])"],
+            env=_clean_env(), capture_output=True, text=True, timeout=60,
+        )
+        return out.returncode == 0 and out.stdout.strip() == version
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def _step(stage: str, cmd: List[str], cwd: Optional[str] = None, timeout: int = 60 * 45) -> None:
@@ -401,6 +416,14 @@ def _install_engine() -> None:
                 _step("fetching the engine", ["git", "clone", "--quiet", LATENTSYNC_REPO, engine_dir])
             _step("pinning the engine version",
                   ["git", "checkout", "--quiet", LATENTSYNC_COMMIT], cwd=engine_dir)
+
+            if os.path.exists(python) and not _is_python(python, ENGINE_PYTHON_VERSION):
+                # Left by an earlier attempt that used the host's own Python.
+                # A session that is restarted without being wiped keeps /tmp,
+                # and installing into that environment fails the same way
+                # every time.
+                print("[presenter] install: replacing an environment built on the wrong Python", flush=True)
+                shutil.rmtree(venv, ignore_errors=True)
 
             if not os.path.exists(python):
                 # uv fetches a standalone Python of the version the engine was
@@ -691,6 +714,15 @@ def health_report(provider: str) -> Dict[str, Any]:
     if INSTALL["state"] != "idle":
         report["install"] = dict(INSTALL)
     return report
+
+
+def configure(
+    shared_lock: Optional[Any] = None, before_engine: Optional[Callable[[], None]] = None
+) -> None:
+    """Tell this service what it shares a GPU with. Called again after a reload."""
+    global _SHARED_GPU_LOCK, _BEFORE_ENGINE
+    _SHARED_GPU_LOCK = shared_lock
+    _BEFORE_ENGINE = before_engine
 
 
 def create_presenter_router(

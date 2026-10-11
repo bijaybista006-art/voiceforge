@@ -145,6 +145,36 @@ export async function discoverPresenter(
 }
 
 /**
+ * Ask every notebook to load the presenter service's current code.
+ *
+ * Only notebooks: Modal gets new code by being redeployed. Returns what each
+ * one answered, and forgets what was known about its engine so it is asked
+ * again straight away.
+ */
+export async function reloadNotebookPresenters(): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const b of await listBackends()) {
+    if (b.selfRegistered === false || !b.enabled || b.health === "offline") continue;
+    try {
+      const res = await fetch(`${b.url.replace(/\/+$/, "")}/presenter/reload`, {
+        method: "POST",
+        headers: backendHeaders(),
+        signal: AbortSignal.timeout(40_000),
+      });
+      out[b.provider] = res.ok
+        ? `reloaded: ${(await res.text()).slice(0, 120)}`
+        : `refused (${res.status}): ${(await res.text().catch(() => "")).slice(0, 160)}`;
+      if (res.ok) {
+        await updateBackend(b.provider, { presenterProbedAt: 0, presenterCapabilities: [] });
+      }
+    } catch (e) {
+      out[b.provider] = `unreachable: ${e instanceof Error ? e.message : "no answer"}`;
+    }
+  }
+  return out;
+}
+
+/**
  * Ask every backend that could have a presenter address but has never been
  * asked. Returns true if anything new was learned.
  *

@@ -69,3 +69,28 @@ jobs:
           from latentsync.whisper.audio2feature import Audio2Feature
           print('inference modules import')
           "
+
+      - name: The engine starts in a notebook's environment
+        env:
+          VOICEFORGE_PRESENTER_ROOT: /tmp/voiceforge-presenter
+          # What a Jupyter kernel hands to every child process. The engine
+          # imports matplotlib at start-up and refused to start with this.
+          MPLBACKEND: module://matplotlib_inline.backend_inline
+          PYTHONPATH: /nonexistent/host-site
+        run: |
+          python - <<'PY'
+          import subprocess, sys
+          sys.path.insert(0, ".")
+          from backend import voiceforge_presenter as vp
+          py = "/tmp/voiceforge-presenter/venv/bin/python"
+          cwd = "/tmp/voiceforge-presenter/LatentSync"
+          # --help is printed only after every import at the top of the
+          # script has succeeded, so it proves start-up without a GPU.
+          for module in ("scripts.inference", "eval.eval_sync_conf"):
+              p = subprocess.run([py, "-m", module, "--help"], cwd=cwd, env=vp._engine_env(),
+                                 capture_output=True, text=True, timeout=600)
+              print(module, "->", p.returncode)
+              if p.returncode != 0:
+                  print("::error::" + (p.stderr or p.stdout)[-900:].replace("\n", " "))
+                  sys.exit(1)
+          PY

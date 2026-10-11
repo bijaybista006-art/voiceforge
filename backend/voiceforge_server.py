@@ -1361,6 +1361,40 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
             )
             presenter.start_install_in_background()
             print("[voiceforge] presenter service mounted; engine installing in the background", flush=True)
+
+            @app.post("/presenter/reload")
+            def presenter_reload(x_backend_secret: Optional[str] = Header(None)) -> dict:
+                """Fetch the presenter service's current code and load it.
+
+                A notebook only reads code when it starts, and starting again
+                means reinstalling the engine — a quarter of an hour to pick
+                up a one-line fix. This replaces just this service's code, in
+                place; the installed engine and its weights are found again
+                on disk, not downloaded again. It is the same file, from the
+                same place, that a restart would fetch.
+                """
+                _check(x_backend_secret)
+                import importlib
+
+                with presenter._LOCK:
+                    if any(j.get("status") in ("queued", "running") for j in presenter.RENDERS.values()):
+                        raise HTTPException(status_code=409, detail="a clip is being made; try again after it")
+                dest = presenter.__file__
+                with urllib.request.urlopen(  # noqa: S310
+                    f"{RAW_BASE}/voiceforge_presenter.py?t={int(time.time())}", timeout=60
+                ) as r:
+                    data = r.read()
+                if len(data) < 4000:
+                    raise HTTPException(status_code=502, detail="the service file did not download")
+                with open(dest, "wb") as f:
+                    f.write(data)
+                importlib.reload(presenter)
+                presenter.configure(
+                    shared_lock=_GPU_LOCK,
+                    before_engine=lambda: torch.cuda.empty_cache() if torch.cuda.is_available() else None,
+                )
+                presenter.start_install_in_background()
+                return {"ok": True, "version": presenter.PRESENTER_VERSION, "bytes": len(data)}
         except Exception as e:  # noqa: BLE001
             print("[voiceforge] presenter service unavailable:", e, flush=True)
 
