@@ -9,6 +9,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { listBackends } from "@/lib/server/backends";
+import { discoverMissingPresenters } from "@/lib/server/presenterjobs";
 import {
   MAX_IMAGE_BYTES,
   MAX_RECORDING_BYTES,
@@ -25,8 +26,12 @@ import { PRESENTER_KINDS, PRESENTER_SOURCES } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 export async function GET() {
+  // Learns, once, whether a backend with a separate presenter address has an
+  // engine installed. A no-op on every later load.
+  await discoverMissingPresenters();
   const [presenters, backends] = await Promise.all([listPresenters(), listBackends()]);
   return NextResponse.json({
     presenters,

@@ -10,7 +10,7 @@
  */
 
 import type { BackendProvider, BackendView, Presenter } from "@/lib/types";
-import { backendHeaders, getBackend, updateBackend } from "./backends";
+import { backendHeaders, getBackend, listBackends, updateBackend } from "./backends";
 import { putBlob } from "./blob";
 import { JobError, callbackToken, saveJob, type Job } from "./jobs";
 import { presenterCapability, resolvePresenter, usablePresenterBackends } from "./presenters";
@@ -75,6 +75,27 @@ export async function discoverPresenter(
   }
 }
 
+/**
+ * Ask every backend that could have a presenter address but has never been
+ * asked. Returns true if anything new was learned.
+ *
+ * This is what makes presenter support appear without anyone pressing Test:
+ * the first time it matters — the Presenters page loading, or a clip being
+ * requested — the question gets asked, and the answer is stored, so it is
+ * asked once and not on every page view.
+ */
+export async function discoverMissingPresenters(timeoutMs = 15_000): Promise<boolean> {
+  const unknown = (await listBackends()).filter(
+    (b) =>
+      b.enabled &&
+      b.presenterCapabilities === undefined &&
+      presenterCandidateUrl(b.url) !== null
+  );
+  if (!unknown.length) return false;
+  const found = await Promise.all(unknown.map((b) => discoverPresenter(b.provider, timeoutMs)));
+  return found.some((caps) => caps.length > 0);
+}
+
 export interface PresenterJobInput {
   /** Omit to use the default presenter. */
   presenterId?: string | null;
@@ -102,7 +123,10 @@ export async function createAndDispatchPresenter(
     );
   }
 
-  const targets = await usablePresenterBackends(presenter.kind);
+  let targets = await usablePresenterBackends(presenter.kind);
+  if (!targets.length && (await discoverMissingPresenters(25_000))) {
+    targets = await usablePresenterBackends(presenter.kind);
+  }
   if (!targets.length) {
     throw new JobError(
       presenter.kind === "recording"
