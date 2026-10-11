@@ -157,7 +157,11 @@ _TAIL_SEEN = {"model": ""}
 # quiet — and in two of the seven a stray blip of sound began five to seven
 # frames later. Four frames keeps a margin for a slow last syllable and ends
 # the take before that blip can start.
-NE_TAIL_FRAMES = int(os.environ.get("VOICEFORGE_NE_TAIL_FRAMES", "4") or 0)
+NE_TAIL_FRAMES = int(os.environ.get("VOICEFORGE_NE_TAIL_FRAMES", "3") or 0)
+# The longest the model may stay on the last letter before the take is ended
+# anyway. A long final vowel was measured at six or more frames of real,
+# loud speech; this is well clear of that.
+NE_LINGER_FRAMES = int(os.environ.get("VOICEFORGE_NE_LINGER_FRAMES", "15") or 15)
 
 
 def _patch_stream_analyzer() -> None:
@@ -229,17 +233,37 @@ def _patch_stream_analyzer() -> None:
                     "completed_at": int(done_at) if done_at is not None else None,
                 }
             )
+            # When to end the take. The check's own "finished" fires when the
+            # model reaches the last letter, and a fixed few frames after that
+            # was wrong in both directions: measured against the audio, the
+            # last letter can carry a whole syllable (a final word was being
+            # cut off while still loud), and the sound is over once the model
+            # moves on to the closing punctuation. So the take ends shortly
+            # after the model reaches that punctuation — the second-to-last
+            # text token — and a ceiling on lingering at the last letter
+            # catches a take that never moves on.
             limit = _TAIL_RULE["frames"]
-            if (
-                limit > 0
-                and done_at is not None
-                and frames >= _TAIL_RULE["min_frames"]
-                and frames - int(done_at) >= limit
-            ):
-                if not _LAST_STOP["why"]:
-                    _LAST_STOP["why"] = f"text finished at frame {int(done_at)}, ended at {frames}"
-                out = -(2 ** 15) * torch.ones_like(out)
-                out[..., self.eos_idx] = 2 ** 15
+            if limit > 0 and frames >= _TAIL_RULE["min_frames"]:
+                try:
+                    pos = int(self.text_position)
+                    tokens = int(self.alignment.shape[1])
+                except Exception:  # noqa: BLE001
+                    pos, tokens = -1, 0
+                if tokens and pos >= tokens - 2 and getattr(self, "_vf_punct_at", None) is None:
+                    self._vf_punct_at = frames
+                punct_at = getattr(self, "_vf_punct_at", None)
+                _LAST_ALIGN["punct_at"] = punct_at
+                at_punct = punct_at is not None and frames - punct_at >= limit
+                lingering = done_at is not None and frames - int(done_at) >= NE_LINGER_FRAMES
+                if at_punct or lingering:
+                    if not _LAST_STOP["why"]:
+                        _LAST_STOP["why"] = (
+                            f"reached the closing punctuation at frame {punct_at}, ended at {frames}"
+                            if at_punct
+                            else f"lingered on the last letter from frame {int(done_at)}, ended at {frames}"
+                        )
+                    out = -(2 ** 15) * torch.ones_like(out)
+                    out[..., self.eos_idx] = 2 ** 15
             return out
 
         class _Capture(logging.Handler):
@@ -724,6 +748,7 @@ def _generate_chunk(
                 "dropped_tokens": _LAST_STOP.get("dropped") or None,
                 "frames": _LAST_ALIGN.get("frames"),
                 "text_done_at": _LAST_ALIGN.get("completed_at"),
+                "punct_at": _LAST_ALIGN.get("punct_at"),
                 "text_tokens": _LAST_ALIGN.get("text_tokens"),
                 # The last second and a half: which text token each frame was on.
                 "align_tail": (_LAST_ALIGN.get("trace") or [])[-40:] or None,
@@ -933,8 +958,14 @@ def _gen_ne_text(text: str, voice_id: str, **kw: Any) -> tuple:
         notes.append(f"cut a runaway take ({len(audio) / max(1, sr):.1f}s for {len(piece)} characters)")
         return ne_cut_runaway(audio, sr, piece)
 
-    pieces = [text] if len(text) <= NE_MAX_CHUNK_CHARS else (ne_prepare(text, NE_MAX_CHUNK_CHARS) or [text])
-    if len(pieces) > 1:
+    # One take per sentence (short ones ride with a neighbour). A narration
+    # job already works this way; a batch item used to go in whole, which
+    # left the sentence endings inside it to the model. The model does not
+    # end a sentence cleanly by itself — it is the end of a *take* that is
+    # controlled — so sound trailing after a sentence survived in the middle
+    # of a clip. It also keeps every piece inside the 200-character limit.
+    pieces = ne_prepare(text, NE_MAX_CHUNK_CHARS) or [text]
+    if len(pieces) > 1 and len(text) > NE_MAX_CHUNK_CHARS:
         notes.append(f"split {len(text)} characters into {len(pieces)} before voicing")
     audio = _join([voice(p, i, True) for i, p in enumerate(pieces)], sr)
     return audio, sr, takes, "; ".join(notes)
