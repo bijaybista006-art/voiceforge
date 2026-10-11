@@ -48,7 +48,7 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
-PRESENTER_VERSION = "1.3.1"
+PRESENTER_VERSION = "1.3.2"
 
 # Pinned so a change upstream cannot alter results between two sessions. The
 # Modal image pins the same commit.
@@ -141,6 +141,27 @@ if os.environ.get("VOICEFORGE_LATENTSYNC_LOWMEM", "1") != "0":
         _install_low_memory_loader()
     except Exception as e:
         print(f"[voiceforge] could not install the low-memory loader ({e})", flush=True)
+
+def _install_sliced_decode():
+    # Decode the frames of a batch one at a time instead of all sixteen at
+    # once. The pictures are the same; the peak GPU memory is far lower, which
+    # is what a GPU shared with the voice models needs.
+    from diffusers import AutoencoderKL
+    original = AutoencoderKL.from_pretrained.__func__
+
+    def from_pretrained(klass, *args, **kwargs):
+        vae = original(klass, *args, **kwargs)
+        vae.enable_slicing()
+        print("[voiceforge] sliced decode", flush=True)
+        return vae
+
+    AutoencoderKL.from_pretrained = classmethod(from_pretrained)
+
+if os.environ.get("VOICEFORGE_LATENTSYNC_SLICE") == "1":
+    try:
+        _install_sliced_decode()
+    except Exception as e:
+        print(f"[voiceforge] could not install the sliced decode ({e})", flush=True)
 
 sys.argv = ["scripts.inference", *sys.argv[1:]]
 runpy.run_module("scripts.inference", run_name="__main__")
@@ -401,6 +422,13 @@ def _engine_env() -> Dict[str, str]:
     index = engine_gpu_index(len(_gpus()), os.environ.get("VOICEFORGE_PRESENTER_GPU"))
     if index is not None:
         env["CUDA_VISIBLE_DEVICES"] = index
+    # On a GPU shared with the voice models the engine fits with very little
+    # to spare, and it failed with 2.8 GB "reserved but unallocated" — memory
+    # the allocator was holding in pieces too small to use. This lets it grow
+    # and shrink its blocks instead, which is what the error itself suggests.
+    env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+    if index is None and _SHARED_GPU_LOCK is not None:
+        env.setdefault("VOICEFORGE_LATENTSYNC_SLICE", "1")
     return env
 
 

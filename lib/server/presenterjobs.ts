@@ -533,6 +533,11 @@ interface PresenterResult {
  */
 export async function completePresenter(job: Job, result: PresenterResult): Promise<Job> {
   if (result.status !== "done") {
+    // One backend failing is not the clip failing. A free notebook can run
+    // out of memory on a clip a larger backend makes without trouble, so the
+    // clip is offered to the next backend in the order before giving up.
+    const moved = await moveToNextBackend(job, result.error ?? "the presenter clip failed");
+    if (moved) return moved;
     return saveJob({ ...job, status: "error", error: result.error ?? "the presenter clip failed" });
   }
 
@@ -589,6 +594,34 @@ async function collectPresenter(job: Job, result: PresenterResult): Promise<Job>
   } catch (e) {
     console.warn("[voiceforge] presenter clip not copied to Blob:", e);
     return saveJob({ ...done, videoUrl: backendCopy });
+  }
+}
+
+/**
+ * Offer a clip that failed on one backend to the next one that can make it.
+ *
+ * Null when there is nowhere left to try, or the clip cannot be remade from
+ * what is stored. Each backend gets one attempt.
+ */
+async function moveToNextBackend(job: Job, why: string): Promise<Job | null> {
+  const plan = job.presenter;
+  if (!plan || !job.audioUrl || !plan.appUrl || !job.backend) return null;
+  const failedOn = [...new Set([...(plan.failedOn ?? []), job.backend])];
+  try {
+    const presenter = await requirePresenter(plan.id);
+    const targets = (await requireTargets(presenter)).filter((t) => !failedOn.includes(t.provider));
+    if (!targets.length) return null;
+    console.warn(`[voiceforge] presenter clip ${job.id} failed on ${job.backend} (${why.slice(0, 120)}); trying ${targets[0].provider}`);
+    return await dispatchPresenter(
+      { ...job, presenter: { ...plan, failedOn }, error: undefined },
+      presenter,
+      targets,
+      job.audioUrl,
+      plan.appUrl,
+      plan
+    );
+  } catch {
+    return null;
   }
 }
 

@@ -98,6 +98,8 @@ export interface Job {
     appUrl?: string;
     /** How many times the clip has been handed to a backend again after one lost it. */
     restarts?: number;
+    /** Backends that tried this clip and failed; not offered it again. */
+    failedOn?: string[];
     steps?: number;
     guidance?: number;
     seed?: number;
