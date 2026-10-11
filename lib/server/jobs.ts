@@ -626,6 +626,11 @@ export const JOB_STALE_AFTER_MS = 35 * 60 * 1000;
 
 export async function reconcileJob(job: Job): Promise<Job> {
   if (job.status === "done" || job.status === "error" || !job.backendUrl) return job;
+  // This asks the voice server. A render or a presenter clip lives on a
+  // different service with different routes, where the question gets a 404
+  // and the job would be declared lost. Each has its own reconcile; refusing
+  // here means a caller that forgets to pick one cannot kill a healthy job.
+  if (job.kind === "video" || job.kind === "presenter") return job;
 
   if (Date.now() - job.createdAt > JOB_STALE_AFTER_MS) {
     // Give up locally. Never contact the backend for this one again.
