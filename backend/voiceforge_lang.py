@@ -207,6 +207,64 @@ def ne_merge_short(
     return out
 
 
+# The longest a Nepali take may honestly be: 0.12 s a character, plus 3 s.
+# Measured on this voice, real speech runs at 8.5-17.6 characters a second
+# (0.057-0.118 s each), so anything past this line is not the text any more.
+NE_SECONDS_PER_CHAR_MAX = 0.12
+NE_SECONDS_SLACK = 3.0
+# The fastest real speech measured, used as "the words cannot be done yet".
+NE_SECONDS_PER_CHAR_MIN = 0.05
+
+
+def ne_duration_cap(text: str) -> float:
+    """Seconds past which a Nepali take has run on beyond its text."""
+    return len(text or "") * NE_SECONDS_PER_CHAR_MAX + NE_SECONDS_SLACK
+
+
+def ne_split_for_retry(text: str) -> List[str]:
+    """Smaller pieces to try when a take of `text` would not end.
+
+    One sentence each, with short ones still riding with a neighbour. Returns
+    [] when there is nothing smaller to try — a single sentence.
+    """
+    sentences = ne_chunks(text, NE_MAX_CHUNK_CHARS)
+    pieces = ne_merge_short(sentences, max_chars=max(NE_MIN_CHUNK_CHARS * 2, len(text or "") // 2))
+    return pieces if len(pieces) > 1 else []
+
+
+def ne_cut_runaway(audio, sr: int, text: str, pause: float = 0.6):
+    """Cut a take that ran on, at the first real pause after its words.
+
+    Last resort, for a take that would not end and could not be split. When
+    the model runs past its text there is normally a gap first — the sentence
+    ends, a moment of quiet or stray fragments, then the babble. So: skip the
+    least time the words could take, find the first stretch of `pause`
+    seconds with no speech in it, and end the take there. If there is no such
+    gap, end it at the duration cap. Either way it is faded, never clicked.
+    """
+    if _np is None or audio is None or len(audio) == 0:
+        return audio
+    audio = _np.asarray(audio, dtype=_np.float32)
+    cap = int(ne_duration_cap(text) * sr)
+    rms, n = _frame_rms(audio, sr)
+    end = min(len(audio), cap)
+    if len(rms) and float(rms.max()) > 0:
+        quiet = rms < float(rms.max()) * 10 ** (-28 / 20)
+        first = int(len(text or "") * NE_SECONDS_PER_CHAR_MIN * sr / n)
+        need = max(1, int(pause * sr / n))
+        run = 0
+        for i in range(first, len(quiet)):
+            run = run + 1 if quiet[i] else 0
+            if run >= need:
+                end = min(end, (i - run + 1) * n + int(0.08 * sr))
+                break
+    out = audio[: max(1, end)].copy()
+    fade = min(len(out), int(0.05 * sr))
+    if fade > 1:
+        out[-fade:] *= _np.linspace(1.0, 0.0, fade, dtype=_np.float32)
+    return out
+
+
 def ne_prepare(text: str, max_chars: int = 240) -> List[str]:
     """Spoken numbers, sentence and breath chunking, then no orphan fragments."""
     return ne_merge_short(ne_chunks(ne_expand_digits(text or ""), max_chars))

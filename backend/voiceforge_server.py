@@ -42,6 +42,10 @@ from typing import Any, Dict, List, Optional
 # in /content/backend on Colab and Kaggle.
 try:
     from backend.voiceforge_lang import (
+        NE_MAX_CHUNK_CHARS,
+        ne_cut_runaway,
+        ne_duration_cap,
+        ne_split_for_retry,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -66,6 +70,10 @@ try:
     )
 except ImportError:  # pragma: no cover - notebook layout
     from voiceforge_lang import (
+        NE_MAX_CHUNK_CHARS,
+        ne_cut_runaway,
+        ne_duration_cap,
+        ne_split_for_retry,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -857,9 +865,77 @@ def _gen_ne(
             first = audio
         # Only the Nepali model reports this. Anything else has no signal to
         # judge by, so its first take stands.
-        if _LAST_ALIGN.get("completed_at") is not None or _TAIL_SEEN["model"] != "chatterbox-ne":
+        if _TAIL_SEEN["model"] != "chatterbox-ne":
             return _fade_out(audio, sr), sr, take + 1
+        # Good means both: the model reached the end of the text, and the
+        # take is no longer than the words could need. Either alone has been
+        # seen to be wrong.
+        ended = _LAST_ALIGN.get("completed_at") is not None
+        if ended and len(audio) / max(1, sr) <= ne_duration_cap(text):
+            return _fade_out(audio, sr), sr, take + 1
+    _NE_GUARD["failed_takes"] = True
     return _fade_out(first, sr), sr, 3
+
+
+# What the guard had to do for the last piece of text, for the diagnostics.
+_NE_GUARD: Dict[str, Any] = {}
+
+
+def _gen_ne_text(text: str, voice_id: str, **kw: Any) -> tuple:
+    """One clip for one piece of Nepali text, whatever that takes.
+
+    A take can fail to end: the model loses its place, never reaches the end
+    of the text, and runs to the library's 40-second limit — a 13-second line
+    followed by 27 seconds of babble. Re-rolling alone does not fix it, since
+    a text that defeats the model once tends to defeat it three times.
+
+    So, in order:
+      1. text over the checkpoint's 200-character limit is split first;
+      2. each piece gets up to three takes (_gen_ne);
+      3. a piece that still will not end is split into its sentences, and
+         those are voiced one at a time and joined;
+      4. only a single sentence that still runs on is cut, at the first real
+         pause after its words.
+    One clip comes back either way, so an "items" job keeps one file per line.
+    Returns (audio, sr, takes, note) where note says what was needed.
+    """
+    seed = int(kw.pop("seed", 0))
+    notes: List[str] = []
+    takes = 0
+    sr = 24000
+
+    def voice(piece: str, n: int, allow_split: bool) -> np.ndarray:
+        nonlocal takes, sr
+        _NE_GUARD.clear()
+        audio, sr, k = _gen_ne(piece, voice_id, seed=seed + n * 104729, **kw)
+        takes += k
+        if not _NE_GUARD.get("failed_takes"):
+            return audio
+        smaller = ne_split_for_retry(piece) if allow_split else []
+        if smaller:
+            notes.append(f"split a {len(piece)}-character piece into {len(smaller)}")
+            parts = [voice(p, n * 10 + i + 1, False) for i, p in enumerate(smaller)]
+            return _join(parts, sr)
+        notes.append(f"cut a runaway take ({len(audio) / max(1, sr):.1f}s for {len(piece)} characters)")
+        return ne_cut_runaway(audio, sr, piece)
+
+    pieces = [text] if len(text) <= NE_MAX_CHUNK_CHARS else (ne_prepare(text, NE_MAX_CHUNK_CHARS) or [text])
+    if len(pieces) > 1:
+        notes.append(f"split {len(text)} characters into {len(pieces)} before voicing")
+    audio = _join([voice(p, i, True) for i, p in enumerate(pieces)], sr)
+    return audio, sr, takes, "; ".join(notes)
+
+
+def _join(parts: List[np.ndarray], sr: int) -> np.ndarray:
+    """Pieces of one line, with the pause a sentence break gets elsewhere."""
+    if len(parts) == 1:
+        return parts[0]
+    out: List[np.ndarray] = []
+    for i, part in enumerate(parts):
+        out.append(np.asarray(part, dtype=np.float32))
+        if i < len(parts) - 1:
+            out.append(np.zeros(int(SENTENCE_GAP_SEC * sr), dtype=np.float32))
+    return np.concatenate(out)
 
 
 def _fade_out(audio: np.ndarray, sr: int, seconds: float = 0.03) -> np.ndarray:
@@ -1103,8 +1179,9 @@ def _run_job(job: Dict[str, Any]) -> None:
             _BUSY = True
             for i, text in enumerate(chunks if not rendered else []):
                 if is_ne:
-                    # Ended where the model finished its text; see _gen_ne.
-                    audio, sr, takes = _gen_ne(
+                    # One clip per chunk, guarded against a take that will
+                    # not end; see _gen_ne_text.
+                    audio, sr, takes, guard_note = _gen_ne_text(
                         text,
                         job["voice_id"],
                         model=params.get("model", "chatterbox"),
@@ -1124,6 +1201,9 @@ def _run_job(job: Dict[str, Any]) -> None:
                             "raw_audio": _LAST_GEN.get("audio"),
                             "audio": round(len(audio) / max(1, sr), 2),
                             "takes": takes,
+                            # The whole chunk, not only its last piece.
+                            "chars": len(text),
+                            **({"guard": guard_note} if guard_note else {}),
                         }
                     )
                     with _JOB_LOCK:
@@ -1446,7 +1526,7 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
                 t0 = time.time()
                 with _GPU_LOCK:
                     _BUSY = True
-                    audio, sr, _takes = _gen_ne(
+                    audio, sr, _takes, _note = _gen_ne_text(
                         p["text"],
                         p["voice_id"],
                         model=p.get("model", "chatterbox"),

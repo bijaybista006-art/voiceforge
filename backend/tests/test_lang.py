@@ -16,7 +16,10 @@ from backend.voiceforge_lang import (  # noqa: E402
     EngineUnavailable,
     DEFAULT_ENGINE,
     ne_chunks,
+    ne_cut_runaway,
+    ne_duration_cap,
     ne_merge_short,
+    ne_split_for_retry,
     ne_expand_digits,
     ne_prepare,
     ne_spell_number,
@@ -180,3 +183,62 @@ class TestStripStatePrefixes:
 
     def test_strips_nested_wrappers_in_turn(self):
         assert strip_state_prefixes({"module.t3.w": 1}) == {"w": 1}
+
+
+class TestRunawayGuard:
+    """A 238-character line once came back as 40 seconds: 13 of speech, then
+    babble to the library's limit, on all three takes."""
+
+    def test_the_cap_is_the_requested_formula(self):
+        assert ne_duration_cap("क" * 100) == pytest.approx(100 * 0.12 + 3.0)
+
+    def test_real_speech_is_under_the_cap(self):
+        # The slowest real take measured: 47 characters in 5.52 s.
+        assert 5.52 < ne_duration_cap("क" * 47)
+        # A normal long one: 237 characters in 13.88 s.
+        assert 13.88 < ne_duration_cap("क" * 237)
+
+    def test_the_runaway_take_is_over_the_cap(self):
+        assert 40.0 > ne_duration_cap("क" * 238)
+
+    def test_two_sentences_split_into_two(self):
+        text = ("टिक टक लाइभमा गिफ्ट पठाउन कहिल्यै पनि फेसबुक वा ह्वाट्सएपका अपरिचित व्यक्तिलाई "
+                "ई सेवा वा खल्तीबाट पैसा नहाल्नुहोस्। क्वाइन किन्न परेमा सधैँ टिक टक एपभित्रको "
+                "आधिकारिक ब्यालेन्स सेक्सनबाट मात्र आधिकारिक माध्यम प्रयोग गरेर रिचार्ज गर्नुहोस्।")
+        pieces = ne_split_for_retry(text)
+        assert len(pieces) == 2
+        assert pieces[0].endswith("नहाल्नुहोस्।")
+        assert " ".join(pieces) == text
+
+    def test_a_single_sentence_has_nothing_smaller_to_try(self):
+        assert ne_split_for_retry("यो एउटै वाक्य हो र यसलाई टुक्र्याउन मिल्दैन।") == []
+
+    def test_a_runaway_take_is_cut_at_the_pause_after_its_words(self):
+        import numpy as np
+
+        sr = 24000
+        t = lambda s: (0.5 * np.sin(2 * np.pi * 220 * np.arange(int(s * sr)) / sr)).astype(np.float32)
+        q = lambda s: np.zeros(int(s * sr), dtype=np.float32)
+        # 12 s of speech, a second of nothing, then 27 s of babble.
+        take = np.concatenate([t(12.0), q(1.0), t(27.0)])
+        cut = ne_cut_runaway(take, sr, "क" * 238)
+        assert 11.9 < len(cut) / sr < 12.4
+
+    def test_pauses_inside_the_words_do_not_end_the_take(self):
+        import numpy as np
+
+        sr = 24000
+        t = lambda s: (0.5 * np.sin(2 * np.pi * 220 * np.arange(int(s * sr)) / sr)).astype(np.float32)
+        q = lambda s: np.zeros(int(s * sr), dtype=np.float32)
+        # A sentence break of 0.4 s is ordinary and must survive.
+        take = np.concatenate([t(6.0), q(0.4), t(6.0), q(1.0), t(20.0)])
+        cut = ne_cut_runaway(take, sr, "क" * 238)
+        assert 12.3 < len(cut) / sr < 12.8
+
+    def test_with_no_pause_at_all_it_ends_at_the_cap(self):
+        import numpy as np
+
+        sr = 24000
+        take = (0.5 * np.sin(2 * np.pi * 220 * np.arange(40 * sr) / sr)).astype(np.float32)
+        cut = ne_cut_runaway(take, sr, "क" * 100)
+        assert len(cut) / sr == pytest.approx(ne_duration_cap("क" * 100), abs=0.1)
