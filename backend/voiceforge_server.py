@@ -514,6 +514,7 @@ def _load_ne_model():
 
     want = state.get("text_emb.weight")
     _NE_TAG["id"] = _register_ne_tag(model, int(want.shape[0]) if want is not None else None)
+    _guard_vocoder(model)
 
     # No model.to(device) here: ChatterboxMultilingualTTS is a wrapper, not an
     # nn.Module, so it has no .to(). from_pretrained already placed it, and the
@@ -608,6 +609,7 @@ def _generate_chunk(
         accepted = inspect.signature(MODELS[model].generate).parameters
         kwargs = {k: v for k, v in kwargs.items() if k in accepted}
         _LAST_STOP["why"] = ""
+        _LAST_STOP["dropped"] = 0
         _LAST_ALIGN.clear()
         _TAIL_SEEN["model"] = model
         if model == "chatterbox-ne" and NE_TAIL_FRAMES > 0:
@@ -635,6 +637,7 @@ def _generate_chunk(
                 "chars": len(text),
                 "audio": round(len(audio) / max(1, sr), 2),
                 "stop": _LAST_STOP["why"] or "natural",
+                "dropped_tokens": _LAST_STOP.get("dropped") or None,
                 "frames": _LAST_ALIGN.get("frames"),
                 "text_done_at": _LAST_ALIGN.get("completed_at"),
                 "exaggeration": float(exaggeration),
