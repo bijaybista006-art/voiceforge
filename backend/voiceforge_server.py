@@ -247,14 +247,56 @@ def _stream_patch_applied() -> bool:
         return False
 
 
+# The vocoder knows 6561 speech tokens. The language model's output layer has
+# 8194 slots, so it is able to emit ids the vocoder has no entry for.
+SPEECH_VOCAB_SIZE = 6561
+
+
+def _guard_vocoder(model) -> None:
+    """Drop speech tokens the vocoder cannot decode before they reach it.
+
+    The library's English pipeline does this (tts.py: speech_tokens[speech_tokens
+    < 6561]); its multilingual pipeline does not, and the vocoder's own filter
+    is commented out. One stray id is then an out-of-range index on the GPU.
+    That raises "CUDA error: device-side assert triggered", and a device-side
+    assert does not just fail the take — it leaves the whole CUDA context
+    unusable, so every job after it fails with the same message until the
+    process is restarted.
+
+    A dropped token costs 40 ms of one take. Wrapped per instance, so the base
+    and the Nepali model are each protected.
+    """
+    try:
+        gen = model.s3gen
+        if getattr(gen, "_vf_guarded", False):
+            return
+        original = gen.inference
+
+        def inference(*args, **kwargs):
+            tokens = kwargs.get("speech_tokens")
+            if tokens is not None and torch.is_tensor(tokens):
+                keep = tokens < SPEECH_VOCAB_SIZE
+                dropped = int((~keep).sum().item())
+                if dropped:
+                    print(f"[gen] dropped {dropped} speech token(s) the vocoder cannot decode", flush=True)
+                    _LAST_STOP["dropped"] = _LAST_STOP.get("dropped", 0) + dropped
+                    kwargs["speech_tokens"] = tokens[keep]
+            return original(*args, **kwargs)
+
+        gen.inference = inference
+        gen._vf_guarded = True
+    except Exception as e:  # noqa: BLE001
+        print(f"[engine] vocoder guard not installed ({e})", flush=True)
+
+
 def load_models(load_qwen: bool = False) -> List[str]:
     """Load Chatterbox Multilingual (23 languages, incl. English and Hindi)."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
     _patch_stream_analyzer()
-
     MODELS["chatterbox"] = ChatterboxMultilingualTTS.from_pretrained(device=device)
+    _guard_vocoder(MODELS["chatterbox"])
     print("chatterbox (multilingual) ready", flush=True)
 
     # Qwen3 pins a conflicting transformers version, so it stays opt-in.
