@@ -208,6 +208,12 @@ export interface RegisteredBackend extends BackendRegistration {
   lastReachedAt?: number;
   /** Why the last attempt to reach it failed, if it did. */
   lastReachError?: string;
+  /**
+   * Whether this backend may be used for presenter video. Absent means yes.
+   * Separate from `enabled`, which governs the backend as a whole: this lets
+   * a notebook keep doing voice while video goes elsewhere, or nowhere.
+   */
+  videoEnabled?: boolean;
 }
 
 /** Registry row plus the status computed at read time. */
@@ -346,4 +352,43 @@ export interface VideoChapterSpan {
   kind: "intro" | "scene" | "outro";
   start: number;
   end: number;
+}
+
+// ---------------------------------------------------------------------------
+// Presenters (lip-synced intro / outro clips)
+// ---------------------------------------------------------------------------
+
+/**
+ * What a presenter is made from, which decides how it is voiced.
+ *
+ * A "recording" is a short video of a real person; the mouth is redrawn to
+ * match new audio and everything else stays genuine footage. An "image" is a
+ * single still that a generative model animates from nothing. They need
+ * different engines and very different hardware, so the kind is stored rather
+ * than guessed from the file.
+ */
+export const PRESENTER_KINDS = ["recording", "image"] as const;
+export type PresenterKind = (typeof PRESENTER_KINDS)[number];
+
+/** Whose face it is. Asked at upload; a real person needs their permission. */
+export const PRESENTER_SOURCES = ["self", "generated", "permission"] as const;
+export type PresenterSource = (typeof PRESENTER_SOURCES)[number];
+
+export interface Presenter {
+  id: string;
+  name: string;
+  kind: PresenterKind;
+  /** Public Blob URL — the backend downloads from here. */
+  url: string;
+  mime: string;
+  sizeBytes: number;
+  /** Recordings only. */
+  durationSec?: number;
+  source: PresenterSource;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PresenterView extends Presenter {
+  isDefault: boolean;
 }

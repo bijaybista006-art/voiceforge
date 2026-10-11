@@ -122,6 +122,7 @@ export async function PATCH(req: NextRequest) {
 
   const updated = await updateBackend(body.provider, {
     ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+    ...(body.videoEnabled !== undefined ? { videoEnabled: body.videoEnabled } : {}),
     ...(body.priority !== undefined ? { priority: body.priority } : {}),
   });
   if (!updated) return NextResponse.json({ error: "Unknown backend." }, { status: 404 });

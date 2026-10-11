@@ -388,6 +388,22 @@ export function BackendsManager({ appUrl }: { appUrl: string }) {
                 >
                   {b.enabled ? "Disable" : "Enable"}
                 </Button>
+                {/* Presenter video only. Voice and slideshow rendering never
+                    read this, so switching it cannot change where narration
+                    goes — it just keeps this backend out of video work. */}
+                <Button
+                  size="sm"
+                  disabled={busy !== null}
+                  title="Whether this backend may be used for presenter video. Voice is not affected."
+                  onClick={() =>
+                    void patch(
+                      { provider: b.provider, videoEnabled: b.videoEnabled === false },
+                      "toggle-video"
+                    )
+                  }
+                >
+                  {b.videoEnabled === false ? "Video: off" : "Video: on"}
+                </Button>
                 <button
                   type="button"
                   disabled={busy !== null}

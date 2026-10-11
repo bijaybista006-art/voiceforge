@@ -37,6 +37,8 @@ export const backendPatchSchema = z.union([
     .object({
       provider: providerSchema,
       enabled: z.boolean().optional(),
+      /** Presenter video only; voice and slideshow rendering ignore it. */
+      videoEnabled: z.boolean().optional(),
       priority: z.number().int().min(0).max(99).optional(),
     })
     .strict(),

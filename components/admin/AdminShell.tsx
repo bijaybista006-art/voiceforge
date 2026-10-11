@@ -13,6 +13,7 @@ import {
   IconScript,
   IconSettings,
   IconSparkle,
+  IconVideo,
   IconWave,
 } from "@/components/ui/Icons";
 
@@ -35,6 +36,7 @@ const PLATFORM: NavItem[] = [
   { href: "/admin/backends", label: "Backends", Icon: IconLink },
   { href: "/admin/voices", label: "Voices", Icon: IconMic },
   { href: "/admin/assets", label: "Assets", Icon: IconImage },
+  { href: "/admin/presenters", label: "Presenters", Icon: IconVideo },
 ];
 
 const DEVELOPER: NavItem[] = [

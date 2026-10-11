@@ -132,6 +132,9 @@ export async function registerBackend(
     registeredAt: existing?.registeredAt ?? now,
     lastHeartbeat: now,
     enabled: existing?.enabled ?? true,
+    // An operator choice, like `enabled`: a restarted notebook must not
+    // quietly switch video back on.
+    ...(existing?.videoEnabled !== undefined ? { videoEnabled: existing.videoEnabled } : {}),
     priority: existing?.priority ?? DEFAULT_PRIORITY[reg.provider],
     selfRegistered: opts.selfRegistered ?? true,
     busy: false,
