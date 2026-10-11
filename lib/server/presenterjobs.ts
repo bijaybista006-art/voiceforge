@@ -272,7 +272,16 @@ export async function createAndDispatchPresenter(
   const presenter = await requirePresenter(input.presenterId);
   const targets = await requireTargets(presenter);
   const job = await newPresenterJob(targets[0], input.source, input.callbackUrl, {
-    presenter: { id: presenter.id, kind: presenter.kind },
+    // Kept with the job so the clip can be started again if a backend loses it.
+    audioUrl: input.audioUrl,
+    presenter: {
+      id: presenter.id,
+      kind: presenter.kind,
+      appUrl,
+      steps: input.steps,
+      guidance: input.guidance,
+      seed: input.seed,
+    },
   });
   const running = await dispatchPresenter(job, presenter, targets, input.audioUrl, appUrl, input);
   return { job: running, presenter };
@@ -490,6 +499,29 @@ async function collectPresenter(job: Job, result: PresenterResult): Promise<Job>
   }
 }
 
+const MAX_CLIP_RESTARTS = 1;
+
+/** Hand a lost clip to a backend again. Null when that is not possible. */
+async function restartLostClip(job: Job): Promise<Job | null> {
+  const plan = job.presenter;
+  if (!plan || !job.audioUrl || !plan.appUrl) return null;
+  if ((plan.restarts ?? 0) >= MAX_CLIP_RESTARTS) return null;
+  try {
+    const presenter = await requirePresenter(plan.id);
+    const targets = await requireTargets(presenter);
+    return await dispatchPresenter(
+      { ...job, presenter: { ...plan, restarts: (plan.restarts ?? 0) + 1 } },
+      presenter,
+      targets,
+      job.audioUrl,
+      plan.appUrl,
+      plan
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** Ask the backend how a clip is doing — the lost-callback safety net. */
 export async function reconcilePresenter(job: Job): Promise<Job> {
   if (job.status === "done" || job.status === "error") return job;
@@ -518,6 +550,13 @@ export async function reconcilePresenter(job: Job): Promise<Job> {
       if (redis && (await redis.exists(`job:${job.id}:collecting`).catch(() => 0)) === 1) return job;
       const latest = await getJob(job.id);
       if (latest && (latest.status === "done" || latest.status === "error")) return latest;
+      // The backend really has lost it. A presenter backend scales to zero
+      // and is replaced on every deploy, and a clip takes minutes, so this
+      // is an ordinary event, not an exotic one. Everything needed to make
+      // the clip again is on the job, so start it again — once. A second
+      // loss is reported, so a backend that keeps dying cannot loop forever.
+      const restarted = await restartLostClip(job);
+      if (restarted) return restarted;
       return saveJob({
         ...job,
         status: "error",

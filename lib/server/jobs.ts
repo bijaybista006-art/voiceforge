@@ -96,6 +96,8 @@ export interface Job {
     kind: "recording" | "image";
     audioJobId?: string;
     appUrl?: string;
+    /** How many times the clip has been handed to a backend again after one lost it. */
+    restarts?: number;
     steps?: number;
     guidance?: number;
     seed?: number;

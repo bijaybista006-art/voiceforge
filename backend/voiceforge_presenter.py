@@ -216,10 +216,41 @@ def _set(job_id: str, **patch: Any) -> None:
             RENDERS[job_id].update(patch)
 
 
+def _keep_awake(job_id: str, self_url: str) -> None:
+    """Keep this container counted as busy while a clip is being made.
+
+    The work happens in a background thread, and a scale-to-zero host judges
+    idleness by incoming requests. Without this the only thing keeping the
+    container alive is the caller's polling: a browser tab moved to the
+    background polls once a minute at best, the host sees two idle minutes,
+    and it shuts the container down halfway through a four-minute clip.
+
+    A request to our own address every 40 seconds is enough to stay awake,
+    and it stops the moment the job leaves the running state.
+    """
+    while True:
+        time.sleep(40)
+        with _LOCK:
+            status = (RENDERS.get(job_id) or {}).get("status")
+        if status not in ("queued", "running"):
+            return
+        try:
+            with urllib.request.urlopen(f"{self_url}/health", timeout=20) as r:  # noqa: S310
+                r.read()
+        except Exception:  # noqa: BLE001
+            # Never fatal: at worst the container is no better protected
+            # than it was before this existed.
+            pass
+
+
 def _run_presenter(req: Dict[str, Any]) -> None:
     job_id = req["job_id"]
     work = tempfile.mkdtemp(prefix="vfp-", dir=WORK_ROOT)
     t0 = time.time()
+    if req.get("_self_url"):
+        threading.Thread(
+            target=_keep_awake, args=(job_id, req["_self_url"]), daemon=True
+        ).start()
 
     try:
         with _GPU_LOCK:
@@ -385,6 +416,10 @@ def create_presenter_router(check_secret) -> APIRouter:
                 raise HTTPException(status_code=400, detail=f"{field} must be an https URL")
         job_id = str(req.get("job_id") or uuid.uuid4().hex)
         req["job_id"] = job_id
+        # Our own public address, as the caller reached us — used to keep
+        # the container awake for the length of the job.
+        host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+        req["_self_url"] = f"https://{host}" if host and "localhost" not in host else ""
         with _LOCK:
             RENDERS[job_id] = {
                 "status": "queued",
