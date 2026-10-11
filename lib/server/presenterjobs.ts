@@ -24,7 +24,7 @@ import {
   type Job,
 } from "./jobs";
 import { presenterCapability, resolvePresenter, usablePresenterBackends } from "./presenters";
-import { kvGet, kvSet } from "./redis";
+import { getRedis, kvDel, kvGet, kvSet } from "./redis";
 import { resolveVoice } from "./voices";
 
 const INDEX = "vf:jobs";
@@ -434,6 +434,28 @@ export async function completePresenter(job: Job, result: PresenterResult): Prom
     return saveJob({ ...job, status: "error", error: result.error ?? "the presenter clip failed" });
   }
 
+  // Two requests can arrive here for the same clip: the backend's completion
+  // callback and a status poll. Both used to copy the file into Blob; the
+  // second copy was refused because the file already existed, and that
+  // caller then overwrote the stored link with the backend's temporary one.
+  // Only one may collect. The other returns what is stored and is polled again.
+  const fresh = await getJob(job.id);
+  if (fresh && (fresh.status === "done" || fresh.status === "error")) return fresh;
+  const lockKey = `job:${job.id}:collecting`;
+  const redis = getRedis();
+  if (redis) {
+    const owned = await redis.set(lockKey, String(Date.now()), { nx: true, ex: 180 });
+    if (owned !== "OK") return fresh ?? job;
+  }
+  try {
+    return await collectPresenter(job, result);
+  } finally {
+    await kvDel(lockKey).catch(() => false);
+  }
+}
+
+async function collectPresenter(job: Job, result: PresenterResult): Promise<Job> {
+
   const done = {
     ...job,
     status: "done" as const,
@@ -490,6 +512,12 @@ export async function reconcilePresenter(job: Job): Promise<Job> {
     });
     if (res.status === 404) {
       if (job.status === "queued") return job;
+      // A collector drops the backend copy just before it records "done".
+      // Do not read that gap as a lost clip.
+      const redis = getRedis();
+      if (redis && (await redis.exists(`job:${job.id}:collecting`).catch(() => 0)) === 1) return job;
+      const latest = await getJob(job.id);
+      if (latest && (latest.status === "done" || latest.status === "error")) return latest;
       return saveJob({
         ...job,
         status: "error",
@@ -497,9 +525,35 @@ export async function reconcilePresenter(job: Job): Promise<Job> {
       });
     }
     if (!res.ok) return job;
-    const result = (await res.json()) as PresenterResult & { progress?: number; stage?: string };
+    const result = (await res.json()) as PresenterResult & {
+      progress?: number;
+      stage?: string;
+      engine?: string;
+      engine_seconds?: number;
+      audio_seconds?: number;
+      gpu?: string;
+      steps?: number;
+      guidance?: number;
+      sync?: Record<string, unknown>;
+    };
     if (result.status === "done" || result.status === "error") {
-      return completePresenter(job, result);
+      // The callback sends these grouped as `diagnostics`; a status read has
+      // them flat. Group them here so a clip finished by a poll reports the
+      // same facts as one finished by its callback.
+      const diagnostics =
+        result.diagnostics ??
+        Object.fromEntries(
+          Object.entries({
+            engine: result.engine,
+            engine_seconds: result.engine_seconds,
+            audio_seconds: result.audio_seconds,
+            gpu: result.gpu,
+            steps: result.steps,
+            guidance: result.guidance,
+            sync: result.sync && Object.keys(result.sync).length ? result.sync : undefined,
+          }).filter(([, v]) => v !== undefined && v !== null)
+        );
+      return completePresenter(job, { ...result, diagnostics });
     }
     if (result.progress !== undefined && result.progress !== job.progress) {
       return saveJob({ ...job, progress: result.progress, stage: result.stage });
