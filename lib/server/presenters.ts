@@ -182,11 +182,17 @@ export function pickPresenterBackends(
 ): BackendView[] {
   const need = presenterCapability(kind);
   return backends.filter(
-    (b) =>
-      isUsableHealth(b.health) &&
-      b.videoEnabled !== false &&
-      (b.capabilities ?? []).includes(need)
+    (b) => isUsableHealth(b.health) && b.videoEnabled !== false && canPresent(b, need)
   );
+}
+
+/**
+ * A notebook reports presenter capabilities alongside its others; Modal's
+ * presenter function is a separate address, so its answer is stored apart.
+ * Either counts.
+ */
+function canPresent(b: BackendView, need: string): boolean {
+  return (b.capabilities ?? []).includes(need) || (b.presenterCapabilities ?? []).includes(need);
 }
 
 export interface PresenterReadiness {
@@ -211,7 +217,7 @@ export function presenterReadiness(
   if (usable.length) return { ready: true, provider: usable[0].provider };
 
   const need = presenterCapability(kind);
-  const capable = backends.filter((b) => (b.capabilities ?? []).includes(need));
+  const capable = backends.filter((b) => canPresent(b, need));
   const what = kind === "recording" ? "re-lip a recording" : "animate a still image";
 
   if (!capable.length) {

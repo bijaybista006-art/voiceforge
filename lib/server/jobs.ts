@@ -53,7 +53,7 @@ export interface Job {
   id: string;
   status: JobStatus;
   /** "tts" by default; video renders share this record but finish differently. */
-  kind?: "tts" | "video";
+  kind?: "tts" | "video" | "presenter";
   mode: JobMode;
   format: "mp3" | "wav";
   voiceId: string;

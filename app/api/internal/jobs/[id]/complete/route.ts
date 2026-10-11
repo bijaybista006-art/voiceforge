@@ -13,6 +13,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { collectJob, getJob, isValidCallbackToken, saveJob } from "@/lib/server/jobs";
+import { completePresenter } from "@/lib/server/presenterjobs";
 import { completeRender } from "@/lib/server/videojobs";
 
 export const runtime = "nodejs";
@@ -21,13 +22,15 @@ export const maxDuration = 60;
 
 const schema = z.object({
   job_id: z.string().optional(),
-  kind: z.enum(["tts", "video"]).optional(),
+  kind: z.enum(["tts", "video", "presenter"]).optional(),
   status: z.string(),
   mode: z.enum(["stitch", "items"]).optional(),
   format: z.enum(["mp3", "wav"]).optional(),
   duration: z.number().optional(),
   gen_seconds: z.number().optional(),
   sample_rate: z.number().optional(),
+  /** Size of a finished video file. */
+  bytes: z.number().optional(),
   /**
    * Which engine really ran. Absent from this schema, zod stripped it before
    * the job record ever saw it — so a substituted model reported itself
@@ -86,9 +89,11 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   // collect, only a URL to record. Pulling 400 MB through this function to
   // put it in Blob would be slow and pointless.
   const collected =
-    job.kind === "video" || body.kind === "video"
-      ? await completeRender(job, body)
-      : await collectJob(job, body);
+    job.kind === "presenter"
+      ? await completePresenter(job, body)
+      : job.kind === "video" || body.kind === "video"
+        ? await completeRender(job, body)
+        : await collectJob(job, body);
 
   // Hand the finished job to whoever asked for a callback (n8n's Wait node
   // resume URL, typically). Failures here must not fail the collection, so

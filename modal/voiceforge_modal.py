@@ -145,3 +145,88 @@ def health():
         return {"ok": True, "provider": "modal", "gpu": "T4 (cold)", "models": ["chatterbox"]}
 
     return probe
+
+
+# ---------------------------------------------------------------------------
+# Presenter video (lip-synced intro / outro clips)
+# ---------------------------------------------------------------------------
+#
+# Its own image and its own function. LatentSync pins torch 2.5 and its own
+# diffusers and numpy, none of which can share an environment with Chatterbox,
+# and a presenter clip must never be able to break narration.
+
+# Pinned so a change upstream cannot alter results between two deploys.
+LATENTSYNC_COMMIT = "a229c3948406bc2cf6eaf4873e662e70c6a04746"
+LATENTSYNC_DIR = "/opt/LatentSync"
+
+
+def _bake_presenter_weights() -> None:
+    """Fetch every weight the engine touches at IMAGE BUILD time.
+
+    A cold container that has to download a 5 GB checkpoint before its first
+    frame spends that time on a billed GPU. Three sources: the lip-sync U-Net
+    and its audio encoder, the VAE that diffusers would otherwise pull on
+    first use, and the face detector that insightface fetches lazily.
+    """
+    import os
+    import urllib.request
+    import zipfile
+
+    from huggingface_hub import hf_hub_download, snapshot_download
+
+    ckpt = os.path.join(LATENTSYNC_DIR, "checkpoints")
+    for name in ("latentsync_unet.pt", "whisper/tiny.pt"):
+        hf_hub_download("ByteDance/LatentSync-1.6", name, local_dir=ckpt)
+
+    snapshot_download("stabilityai/sd-vae-ft-mse")
+
+    models = os.path.join(ckpt, "auxiliary", "models")
+    os.makedirs(models, exist_ok=True)
+    archive = os.path.join(models, "buffalo_l.zip")
+    urllib.request.urlretrieve(
+        "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip",
+        archive,
+    )
+    with zipfile.ZipFile(archive) as z:
+        z.extractall(os.path.join(models, "buffalo_l"))
+    os.remove(archive)
+
+
+presenter_image = (
+    modal.Image.debian_slim(python_version="3.10")
+    .apt_install("ffmpeg", "git", "libgl1", "libglib2.0-0", "build-essential")
+    .run_commands(
+        f"git clone https://github.com/bytedance/LatentSync.git {LATENTSYNC_DIR}",
+        f"cd {LATENTSYNC_DIR} && git checkout {LATENTSYNC_COMMIT}",
+        # The engine's own pins, minus the demo UI it does not need here.
+        f"cd {LATENTSYNC_DIR} && grep -v '^gradio' requirements.txt > /tmp/req.txt"
+        " && pip install -r /tmp/req.txt",
+    )
+    .pip_install("fastapi[standard]")
+    .run_function(_bake_presenter_weights)
+    .add_local_dir("backend", remote_path="/root/backend")
+)
+
+
+@app.function(
+    image=presenter_image,
+    secrets=[secret],
+    # LatentSync 1.6 needs about 18 GB, which rules out the T4 the voice
+    # function uses. An L4 has 24 GB.
+    gpu="L4",
+    memory=16384,
+    max_containers=1,
+    timeout=60 * 30,
+    scaledown_window=120,
+)
+@modal.asgi_app()
+def presenter():
+    """Lip-synced presenter clips. GPU, separate from voice — see above."""
+    import os
+    import sys
+
+    os.environ.setdefault("VOICEFORGE_LATENTSYNC_DIR", LATENTSYNC_DIR)
+    sys.path.insert(0, "/root")
+    from backend.voiceforge_presenter import create_presenter_app
+
+    return create_presenter_app(provider="modal")

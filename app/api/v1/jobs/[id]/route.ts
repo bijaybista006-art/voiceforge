@@ -10,6 +10,7 @@
 import { NextResponse } from "next/server";
 import { apiError, authenticate } from "@/lib/server/apiauth";
 import { getJob, reconcileJob } from "@/lib/server/jobs";
+import { reconcilePresenter } from "@/lib/server/presenterjobs";
 import { reconcileRender } from "@/lib/server/videojobs";
 
 export const runtime = "nodejs";
@@ -31,7 +32,12 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     (job.status === "running" || job.status === "queued") &&
     Date.now() - job.updatedAt > RECONCILE_AFTER_MS
   ) {
-    job = job.kind === "video" ? await reconcileRender(job) : await reconcileJob(job);
+    job =
+      job.kind === "presenter"
+        ? await reconcilePresenter(job)
+        : job.kind === "video"
+          ? await reconcileRender(job)
+          : await reconcileJob(job);
   }
 
   return NextResponse.json({

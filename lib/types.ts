@@ -124,6 +124,17 @@ export interface BackendRegistration {
   renderUrl?: string;
   /** What this backend can actually do — defaults to ["tts"]. */
   capabilities?: string[];
+  /**
+   * Where presenter clips go, when that is a different address from voice
+   * (Modal runs them in their own function). Unset means the main url.
+   */
+  presenterUrl?: string;
+  /**
+   * What the presenter address reported it can do. Kept apart from
+   * `capabilities`, which is rewritten from the voice server's /health on
+   * every probe and knows nothing about presenter video.
+   */
+  presenterCapabilities?: string[];
 }
 
 /** A row in the registry, as stored. */

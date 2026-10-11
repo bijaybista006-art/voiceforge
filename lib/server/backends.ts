@@ -129,6 +129,12 @@ export async function registerBackend(
     version: reg.version ?? existing?.version,
     renderUrl: reg.renderUrl ?? existing?.renderUrl,
     capabilities: reg.capabilities ?? existing?.capabilities ?? ["tts"],
+    ...((reg.presenterUrl ?? existing?.presenterUrl)
+      ? { presenterUrl: reg.presenterUrl ?? existing?.presenterUrl }
+      : {}),
+    ...((reg.presenterCapabilities ?? existing?.presenterCapabilities)
+      ? { presenterCapabilities: reg.presenterCapabilities ?? existing?.presenterCapabilities }
+      : {}),
     registeredAt: existing?.registeredAt ?? now,
     lastHeartbeat: now,
     enabled: existing?.enabled ?? true,

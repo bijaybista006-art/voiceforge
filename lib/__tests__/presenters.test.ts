@@ -13,6 +13,7 @@ import {
   presenterReadiness,
   slugifyPresenterName,
 } from "../server/presenters";
+import { presenterCandidateUrl, presenterUrlOf } from "../server/presenterjobs";
 import type { BackendProvider, BackendView } from "../types";
 
 /**
@@ -215,5 +216,40 @@ describe("the video switch in the backends API", () => {
   it("does not disturb adding a backend by URL", () => {
     const parsed = backendPatchSchema.parse({ provider: "modal", url: "https://x.modal.run" });
     expect(parsed).toEqual({ provider: "modal", url: "https://x.modal.run" });
+  });
+});
+
+describe("where presenter work is sent", () => {
+  it("derives Modal's presenter function from its voice function", () => {
+    expect(presenterCandidateUrl("https://me--voiceforge-api.modal.run")).toBe(
+      "https://me--voiceforge-presenter.modal.run"
+    );
+    expect(presenterCandidateUrl("https://me--voiceforge-api.modal.run/")).toBe(
+      "https://me--voiceforge-presenter.modal.run"
+    );
+  });
+
+  it("has nothing to derive for a notebook tunnel, which serves everything itself", () => {
+    expect(presenterCandidateUrl("https://abc.trycloudflare.com")).toBeNull();
+  });
+
+  it("uses the dedicated address when there is one, otherwise the main one", () => {
+    expect(presenterUrlOf({ url: "https://a.test/", presenterUrl: "https://p.test/" })).toBe(
+      "https://p.test"
+    );
+    expect(presenterUrlOf({ url: "https://a.test/" })).toBe("https://a.test");
+  });
+
+  it("routes on what the presenter address reported, not only the voice server", () => {
+    // Modal's voice /health says ["tts"]; the presenter function is what
+    // knows it can lip-sync. Losing that on the next voice probe would
+    // silently take Modal out of video routing.
+    const modal = backend("modal", {
+      capabilities: ["tts"],
+      presenterCapabilities: ["presenter-relip"],
+    });
+    expect(pickPresenterBackends([modal], "recording")).toHaveLength(1);
+    expect(pickPresenterBackends([modal], "image")).toHaveLength(0);
+    expect(presenterReadiness([modal], "recording")).toEqual({ ready: true, provider: "modal" });
   });
 });

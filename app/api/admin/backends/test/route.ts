@@ -14,6 +14,7 @@ import {
   recordHealthFacts,
   recordUnreachable,
 } from "@/lib/server/backends";
+import { discoverPresenter } from "@/lib/server/presenterjobs";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -39,6 +40,11 @@ export async function POST(req: NextRequest) {
   }
 
   const started = Date.now();
+  // Started alongside the health check, not after it: both have to fit
+  // inside this route's 60s. It asks the backend's presenter address what it
+  // can do and stores the answer; it never throws and never affects the
+  // result of the test itself.
+  const presenter = discoverPresenter(body.provider, 50_000);
   let health: unknown;
   try {
     const res = await fetch(`${backend.url}/health`, {
@@ -78,6 +84,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       latencyMs: Date.now() - started,
       health,
+      presenter: await presenter,
     });
   }
 
