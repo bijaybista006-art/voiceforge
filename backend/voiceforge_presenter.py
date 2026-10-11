@@ -48,7 +48,7 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
-PRESENTER_VERSION = "1.3.0"
+PRESENTER_VERSION = "1.3.1"
 
 # Pinned so a change upstream cannot alter results between two sessions. The
 # Modal image pins the same commit.
@@ -118,7 +118,11 @@ def _install_low_memory_loader():
             ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=True, mmap=True)
             state = ckpt["state_dict"] if isinstance(ckpt, dict) and "state_dict" in ckpt else ckpt
             step = ckpt.get("global_step", 0) if isinstance(ckpt, dict) else 0
-            model.load_state_dict(state, strict=False, assign=True)
+            # The class overrides load_state_dict without the assign option;
+            # its override only drops entries whose shapes do not fit the
+            # config. Going to the base method directly keeps assign, and a
+            # shape that does not fit raises here and takes the fallback.
+            torch.nn.Module.load_state_dict(model, state, strict=False, assign=True)
             # Anything the checkpoint did not supply still has no storage,
             # and could not be moved to the GPU. Use the original loader then.
             unset = [n for n, p in list(model.named_parameters()) + list(model.named_buffers()) if p.is_meta]
