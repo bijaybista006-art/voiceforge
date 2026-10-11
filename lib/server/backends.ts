@@ -129,11 +129,21 @@ export async function registerBackend(
     version: reg.version ?? existing?.version,
     renderUrl: reg.renderUrl ?? existing?.renderUrl,
     capabilities: reg.capabilities ?? existing?.capabilities ?? ["tts"],
-    ...((reg.presenterUrl ?? existing?.presenterUrl)
-      ? { presenterUrl: reg.presenterUrl ?? existing?.presenterUrl }
-      : {}),
-    ...((reg.presenterCapabilities ?? existing?.presenterCapabilities)
-      ? { presenterCapabilities: reg.presenterCapabilities ?? existing?.presenterCapabilities }
+    // What a presenter address reported belongs to that address. A notebook
+    // gets a new tunnel every session, and the new session starts with no
+    // engine installed, so a changed url forgets everything learned about
+    // the old one instead of routing clips to a claim that is no longer true.
+    ...(existing && existing.url === reg.url.replace(/\/+$/, "")
+      ? {
+          ...(existing.presenterUrl ? { presenterUrl: existing.presenterUrl } : {}),
+          ...(existing.presenterCapabilities
+            ? { presenterCapabilities: existing.presenterCapabilities }
+            : {}),
+          ...(existing.presenterProbedAt ? { presenterProbedAt: existing.presenterProbedAt } : {}),
+          ...(existing.presenterProbedUrl
+            ? { presenterProbedUrl: existing.presenterProbedUrl }
+            : {}),
+        }
       : {}),
     registeredAt: existing?.registeredAt ?? now,
     lastHeartbeat: now,

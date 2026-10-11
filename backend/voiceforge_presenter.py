@@ -5,10 +5,17 @@ Takes a short video of a presenter and a piece of narration, and returns the
 same video with the mouth redrawn to match the narration. Everything outside
 the mouth region is the original footage.
 
-A separate app from the voice server on purpose. The engine (LatentSync)
-pins its own torch, diffusers and numpy, which do not coexist with
-Chatterbox's, and a presenter clip must never be able to break narration.
-This file imports nothing from voiceforge_server.
+Separate from the voice server on purpose. The engine (LatentSync) pins its
+own torch, diffusers and numpy, which do not coexist with Chatterbox's, and a
+presenter clip must never be able to break narration. This file imports
+nothing from voiceforge_server and never imports torch: the engine always
+runs as a subprocess, in its own Python.
+
+It runs in two places:
+  * Modal — its own function and image, with the engine baked in.
+  * A Colab or Kaggle notebook — mounted into the voice server under
+    /presenter, with the engine installed into a private virtualenv in the
+    background after the notebook starts (see start_install_in_background).
 
 The job protocol mirrors voiceforge_render so the gateway treats a presenter
 clip like any other finished video:
@@ -17,7 +24,7 @@ POST   /render               -> 202; body: job_id, video_url, audio_url, ...
 GET    /render/{id}          -> status, stage, progress
 GET    /render/{id}/video    -> the finished MP4
 DELETE /render/{id}          -> drop the file once it has been collected
-GET    /health               -> capabilities: ["presenter-relip"]
+GET    /health               -> capabilities: ["presenter-relip"] once ready
 
 Every call except /health and a token-carrying video GET needs the
 X-Backend-Secret header.
@@ -29,39 +36,64 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 import traceback
 import urllib.request
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
-PRESENTER_VERSION = "1.0.0"
+PRESENTER_VERSION = "1.1.0"
 
-# Where the LatentSync checkout lives. The engine resolves its configs and
-# checkpoints relative to its own directory, so it is always run from there.
+# Pinned so a change upstream cannot alter results between two sessions. The
+# Modal image pins the same commit.
+LATENTSYNC_REPO = "https://github.com/bytedance/LatentSync.git"
+LATENTSYNC_COMMIT = "a229c3948406bc2cf6eaf4873e662e70c6a04746"
+
+# Where the LatentSync checkout lives and which Python runs it. The engine
+# resolves its configs and checkpoints relative to its own directory, so it is
+# always run from there. Both are replaced once a notebook install finishes.
 ENGINE_DIR = os.environ.get("VOICEFORGE_LATENTSYNC_DIR", "/opt/LatentSync")
-# 1.6 is trained at 512 px and needs about 18 GB; 1.5 is 256 px and fits 8 GB.
-# The config has to match the checkpoint, so both are set together.
-UNET_CONFIG = os.environ.get("VOICEFORGE_LATENTSYNC_CONFIG", "configs/unet/stage2_512.yaml")
-UNET_CKPT = os.environ.get("VOICEFORGE_LATENTSYNC_CKPT", "checkpoints/latentsync_unet.pt")
-ENGINE_NAME = os.environ.get("VOICEFORGE_LATENTSYNC_NAME", "latentsync-1.6")
+ENGINE_PYTHON = os.environ.get("VOICEFORGE_LATENTSYNC_PYTHON", "python")
+
+# The config has to match the checkpoint, so they travel as a pair.
+#   1.6 — trained at 512 px, needs about 18 GB. Sharper. Does not fit a T4.
+#   1.5 — 256 px, fits in 8 GB. What a free 16 GB notebook GPU can run.
+# Listed best first: with both installed, the first is the default.
+ENGINES: Dict[str, Dict[str, str]] = {
+    "latentsync-1.6": {
+        "config": "configs/unet/stage2_512.yaml",
+        "ckpt": "checkpoints/latentsync_unet.pt",
+    },
+    "latentsync-1.5": {
+        "config": "configs/unet/stage2.yaml",
+        "ckpt": "checkpoints/v15/latentsync_unet.pt",
+    },
+}
+PREFERRED_ENGINE = os.environ.get("VOICEFORGE_LATENTSYNC_NAME", "").strip()
 
 WORK_ROOT = os.environ.get("VOICEFORGE_PRESENTER_DIR", tempfile.gettempdir())
 MAX_DOWNLOAD = 200 * 1024 * 1024
 DOWNLOAD_TIMEOUT = 120
 # A presenter clip is an intro or an outro, not a narration. The cap keeps a
-# mistaken request from holding a paid GPU for an hour.
+# mistaken request from holding a GPU for an hour.
 MAX_AUDIO_SECONDS = float(os.environ.get("VOICEFORGE_PRESENTER_MAX_SECONDS", "90"))
-ENGINE_TIMEOUT = 60 * 25
+ENGINE_TIMEOUT = 60 * 40
 
 RENDERS: Dict[str, Dict[str, Any]] = {}
 _LOCK = threading.Lock()
-_GPU_LOCK = threading.Lock()  # one clip at a time: a single GPU
+_GPU_LOCK = threading.Lock()  # one clip at a time
+
+# Set when this service shares a process with the voice server (a notebook).
+# On a single GPU the two must not run at once: the voice models already hold
+# several GB and the engine needs eight more.
+_SHARED_GPU_LOCK: Optional[Any] = None
+_BEFORE_ENGINE: Optional[Callable[[], None]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -87,14 +119,48 @@ def clamp_guidance(value: Any, default: float = 1.5) -> float:
     return max(1.0, min(3.0, g))
 
 
+def installed_engines(engine_dir: Optional[str] = None) -> List[str]:
+    """Engines whose checkpoint is actually on disk, best first."""
+    root = engine_dir if engine_dir is not None else ENGINE_DIR
+    return [
+        name for name, cfg in ENGINES.items()
+        if os.path.exists(os.path.join(root, cfg["ckpt"]))
+    ]
+
+
+def pick_engine(requested: Any, available: List[str], preferred: str = "") -> Optional[str]:
+    """Which engine a job runs on.
+
+    The request's choice if that engine is installed, otherwise this
+    backend's configured preference, otherwise the best one installed. A
+    request for an engine that is not here is not an error: a notebook has
+    only the small one, and the caller wanted a clip, not a particular file.
+    """
+    wanted = str(requested or "").strip()
+    if wanted in available:
+        return wanted
+    if preferred in available:
+        return preferred
+    return available[0] if available else None
+
+
 def engine_command(
-    video: str, audio: str, out: str, steps: int, guidance: float, seed: int, temp_dir: str
+    engine: str,
+    video: str,
+    audio: str,
+    out: str,
+    steps: int,
+    guidance: float,
+    seed: int,
+    temp_dir: str,
+    python: Optional[str] = None,
 ) -> List[str]:
     """The exact call the engine's own inference.sh makes."""
+    cfg = ENGINES[engine]
     return [
-        "python", "-m", "scripts.inference",
-        "--unet_config_path", UNET_CONFIG,
-        "--inference_ckpt_path", UNET_CKPT,
+        python or ENGINE_PYTHON, "-m", "scripts.inference",
+        "--unet_config_path", cfg["config"],
+        "--inference_ckpt_path", cfg["ckpt"],
         "--inference_steps", str(steps),
         "--guidance_scale", str(guidance),
         "--enable_deepcache",
@@ -118,8 +184,37 @@ def tail_of(text: str, limit: int = 600) -> str:
     return text[-limit:] if len(text) > limit else text
 
 
+def parse_sync_report(text: str) -> Optional[Dict[str, float]]:
+    """Read the two numbers out of the engine's sync evaluation.
+
+    It prints "SyncNet confidence: 7.90" and "AV offset: -1". Confidence is
+    how clearly the mouth and the sound agree (roughly: below 3 is visibly
+    off, above 6 is good). Offset is in frames at 25 fps, so 1 is 40 ms.
+    """
+    import re
+
+    conf = re.search(r"SyncNet confidence:\s*(-?\d+(?:\.\d+)?)", text or "")
+    off = re.search(r"AV offset:\s*(-?\d+)", text or "")
+    if not conf or not off:
+        return None
+    return {"confidence": round(float(conf.group(1)), 2), "offset_frames": int(off.group(1))}
+
+
+def engine_gpu_index(gpu_count: int, override: Optional[str] = None) -> Optional[str]:
+    """Which GPU the engine should see, as a CUDA_VISIBLE_DEVICES value.
+
+    Kaggle offers two T4s and the voice server only ever uses the first. When
+    there is a second, the engine takes it, so a clip neither waits for
+    narration nor competes with it for memory. With one GPU this returns None
+    and the engine shares it, one job at a time.
+    """
+    if override not in (None, ""):
+        return str(override)
+    return "1" if gpu_count > 1 else None
+
+
 # ---------------------------------------------------------------------------
-# media helpers
+# media and system helpers
 # ---------------------------------------------------------------------------
 
 def _download(url: str, dest: str) -> str:
@@ -157,20 +252,41 @@ def _ffmpeg(args: List[str], timeout: int = 600) -> None:
         raise RuntimeError(f"ffmpeg failed: {tail_of(proc.stderr, 400)}")
 
 
-def parse_sync_report(text: str) -> Optional[Dict[str, float]]:
-    """Read the two numbers out of the engine's sync evaluation.
+def _gpus() -> List[str]:
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if out.returncode != 0:
+            return []
+        return [line.strip() for line in out.stdout.splitlines() if line.strip()]
+    except Exception:  # noqa: BLE001
+        return []
 
-    It prints "SyncNet confidence: 7.90" and "AV offset: -1". Confidence is
-    how clearly the mouth and the sound agree (roughly: below 3 is visibly
-    off, above 6 is good). Offset is in frames at 25 fps, so 1 is 40 ms.
-    """
-    import re
 
-    conf = re.search(r"SyncNet confidence:\s*(-?\d+(?:\.\d+)?)", text or "")
-    off = re.search(r"AV offset:\s*(-?\d+)", text or "")
-    if not conf or not off:
-        return None
-    return {"confidence": round(float(conf.group(1)), 2), "offset_frames": int(off.group(1))}
+def _gpu_name() -> str:
+    gpus = _gpus()
+    if not gpus:
+        return "unknown"
+    return gpus[0] if len(gpus) == 1 else f"{len(gpus)}x {gpus[0]}"
+
+
+def _engine_env() -> Dict[str, str]:
+    env = dict(os.environ)
+    index = engine_gpu_index(len(_gpus()), os.environ.get("VOICEFORGE_PRESENTER_GPU"))
+    if index is not None:
+        env["CUDA_VISIBLE_DEVICES"] = index
+    # The notebook kernel's own Python packages must not leak into the
+    # engine's virtualenv.
+    env.pop("PYTHONPATH", None)
+    return env
+
+
+def _shares_gpu_with_voice() -> bool:
+    return _SHARED_GPU_LOCK is not None and engine_gpu_index(
+        len(_gpus()), os.environ.get("VOICEFORGE_PRESENTER_GPU")
+    ) is None
 
 
 def _measure_sync(path: str, work: str) -> Dict[str, Any]:
@@ -183,9 +299,9 @@ def _measure_sync(path: str, work: str) -> Dict[str, Any]:
     """
     try:
         proc = subprocess.run(
-            ["python", "-m", "eval.eval_sync_conf", "--video_path", path,
+            [ENGINE_PYTHON, "-m", "eval.eval_sync_conf", "--video_path", path,
              "--temp_dir", os.path.join(work, "sync-tmp")],
-            cwd=ENGINE_DIR, capture_output=True, text=True, timeout=600,
+            cwd=ENGINE_DIR, env=_engine_env(), capture_output=True, text=True, timeout=600,
         )
         report = parse_sync_report(proc.stdout)
         if report:
@@ -195,15 +311,112 @@ def _measure_sync(path: str, work: str) -> Dict[str, Any]:
         return {"error": str(e)[:300]}
 
 
-def _gpu_name() -> str:
+# ---------------------------------------------------------------------------
+# installing the engine inside a notebook session
+# ---------------------------------------------------------------------------
+#
+# Modal bakes the engine into its image. A notebook has nothing but the voice
+# server's own environment, which the engine cannot share, so it is installed
+# here: a checkout, a private virtualenv, and the weights. It takes several
+# minutes and several GB, so it runs in a background thread after the voice
+# server is already answering. Until it finishes this service reports no
+# capability and the gateway sends presenter work elsewhere.
+
+INSTALL_ROOT = os.environ.get("VOICEFORGE_PRESENTER_ROOT", "/tmp/voiceforge-presenter")
+INSTALL: Dict[str, Any] = {"state": "idle", "stage": "", "error": "", "seconds": 0}
+_INSTALL_STARTED = threading.Event()
+
+_WEIGHTS_SCRIPT = r'''
+import os, sys, urllib.request, zipfile
+from huggingface_hub import hf_hub_download, snapshot_download
+
+ckpt = sys.argv[1]
+# 1.5: the checkpoint that fits a 16 GB GPU.
+hf_hub_download("ByteDance/LatentSync-1.5", "latentsync_unet.pt", local_dir=os.path.join(ckpt, "v15"))
+for name in ("whisper/tiny.pt", "auxiliary/sfd_face.pth", "auxiliary/syncnet_v2.model"):
+    hf_hub_download("ByteDance/LatentSync-1.5", name, local_dir=ckpt)
+snapshot_download("stabilityai/sd-vae-ft-mse")
+models = os.path.join(ckpt, "auxiliary", "models")
+target = os.path.join(models, "buffalo_l")
+if not os.path.isdir(target):
+    os.makedirs(models, exist_ok=True)
+    archive = os.path.join(models, "buffalo_l.zip")
+    urllib.request.urlretrieve(
+        "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip", archive)
+    with zipfile.ZipFile(archive) as z:
+        z.extractall(target)
+    os.remove(archive)
+print("weights ready")
+'''
+
+
+def _step(stage: str, cmd: List[str], cwd: Optional[str] = None, timeout: int = 60 * 45) -> None:
+    INSTALL["stage"] = stage
+    print(f"[presenter] install: {stage}", flush=True)
+    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    if proc.returncode != 0:
+        raise RuntimeError(f"{stage} failed: {tail_of(proc.stderr or proc.stdout, 500)}")
+
+
+def _install_engine() -> None:
+    global ENGINE_DIR, ENGINE_PYTHON
+    t0 = time.time()
+    engine_dir = os.path.join(INSTALL_ROOT, "LatentSync")
+    venv = os.path.join(INSTALL_ROOT, "venv")
+    python = os.path.join(venv, "bin", "python")
+    marker = os.path.join(INSTALL_ROOT, f".ready-{LATENTSYNC_COMMIT[:10]}")
+
     try:
-        out = subprocess.run(
-            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
-            capture_output=True, text=True, timeout=15,
-        )
-        return out.stdout.strip().splitlines()[0] if out.returncode == 0 else "unknown"
-    except Exception:  # noqa: BLE001
-        return "unknown"
+        INSTALL["state"] = "installing"
+        if not os.path.exists(marker):
+            os.makedirs(INSTALL_ROOT, exist_ok=True)
+
+            if not os.path.isdir(os.path.join(engine_dir, ".git")):
+                shutil.rmtree(engine_dir, ignore_errors=True)
+                _step("fetching the engine", ["git", "clone", "--quiet", LATENTSYNC_REPO, engine_dir])
+            _step("pinning the engine version",
+                  ["git", "checkout", "--quiet", LATENTSYNC_COMMIT], cwd=engine_dir)
+
+            if not os.path.exists(python):
+                # virtualenv, not `python -m venv`: notebook images often ship
+                # Python without ensurepip, where venv cannot bootstrap pip.
+                _step("preparing an isolated Python",
+                      [sys.executable, "-m", "pip", "install", "--quiet", "virtualenv"])
+                _step("creating the environment",
+                      [sys.executable, "-m", "virtualenv", "--quiet", venv])
+
+            # The engine's own requirements, minus its demo UI.
+            reqs = os.path.join(INSTALL_ROOT, "requirements.txt")
+            with open(os.path.join(engine_dir, "requirements.txt"), encoding="utf-8") as src:
+                kept = [line for line in src.read().splitlines() if not line.startswith("gradio")]
+            with open(reqs, "w", encoding="utf-8") as dst:
+                dst.write("\n".join(kept) + "\n")
+            _step("installing the engine's libraries (the slow part)",
+                  [python, "-m", "pip", "install", "--quiet", "-r", reqs])
+
+            script = os.path.join(INSTALL_ROOT, "weights.py")
+            with open(script, "w", encoding="utf-8") as f:
+                f.write(_WEIGHTS_SCRIPT)
+            _step("downloading the weights",
+                  [python, script, os.path.join(engine_dir, "checkpoints")])
+
+            with open(marker, "w", encoding="utf-8") as f:
+                f.write(str(time.time()))
+
+        ENGINE_DIR, ENGINE_PYTHON = engine_dir, python
+        INSTALL.update(state="ready", stage="ready", error="", seconds=round(time.time() - t0))
+        print(f"[presenter] engine ready: {installed_engines()} ({INSTALL['seconds']}s)", flush=True)
+    except Exception as e:  # noqa: BLE001
+        INSTALL.update(state="failed", error=str(e)[:600], seconds=round(time.time() - t0))
+        print("[presenter] install failed:", e, flush=True)
+
+
+def start_install_in_background() -> None:
+    """Begin installing the engine, once. Returns immediately."""
+    if _INSTALL_STARTED.is_set():
+        return
+    _INSTALL_STARTED.set()
+    threading.Thread(target=_install_engine, daemon=True).start()
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +456,30 @@ def _keep_awake(job_id: str, self_url: str) -> None:
             pass
 
 
+def _run_engine(cmd: List[str]) -> subprocess.CompletedProcess:
+    """Run the engine, alone on its GPU.
+
+    When it shares the only GPU with the voice server it takes the voice
+    server's own lock for the duration, so no narration starts halfway
+    through and pushes the card out of memory.
+    """
+    def go() -> subprocess.CompletedProcess:
+        return subprocess.run(
+            cmd, cwd=ENGINE_DIR, env=_engine_env(),
+            capture_output=True, text=True, timeout=ENGINE_TIMEOUT,
+        )
+
+    if _shares_gpu_with_voice():
+        with _SHARED_GPU_LOCK:  # type: ignore[union-attr]
+            if _BEFORE_ENGINE:
+                try:
+                    _BEFORE_ENGINE()
+                except Exception:  # noqa: BLE001
+                    pass
+            return go()
+    return go()
+
+
 def _run_presenter(req: Dict[str, Any]) -> None:
     job_id = req["job_id"]
     work = tempfile.mkdtemp(prefix="vfp-", dir=WORK_ROOT)
@@ -255,6 +492,10 @@ def _run_presenter(req: Dict[str, Any]) -> None:
     try:
         with _GPU_LOCK:
             _set(job_id, status="running", stage="fetching", progress=2)
+
+            engine = pick_engine(req.get("engine"), installed_engines(), PREFERRED_ENGINE)
+            if not engine:
+                raise RuntimeError("the lip-sync engine is not installed on this backend")
 
             src_video = _download(
                 req["video_url"], os.path.join(work, "src" + extension_of(req["video_url"], ".mp4"))
@@ -281,8 +522,8 @@ def _run_presenter(req: Dict[str, Any]) -> None:
                 "-i", src_video, "-an", "-r", "25",
                 # The engine holds every frame in memory at once. It only ever
                 # needs as much footage as there is audio (it loops a shorter
-                # recording itself), and the face it redraws is 512 px, so a
-                # 1280 px frame loses nothing that survives to the result.
+                # recording itself), and the face it redraws is at most 512 px,
+                # so a 1280 px frame loses nothing that survives to the result.
                 "-t", f"{audio_seconds + 0.5:.2f}",
                 "-vf", "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))'",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "17",
@@ -291,19 +532,17 @@ def _run_presenter(req: Dict[str, Any]) -> None:
             audio = os.path.join(work, "in.wav")
             _ffmpeg(["-i", src_audio, "-ac", "1", "-ar", "16000", audio])
 
-            _set(job_id, stage="lip-syncing", progress=15)
+            _set(job_id, stage="lip-syncing", progress=15, engine=engine)
             out = os.path.join(work, f"{job_id}.mp4")
             cmd = engine_command(
-                video, audio, out,
+                engine, video, audio, out,
                 clamp_steps(req.get("steps")),
                 clamp_guidance(req.get("guidance")),
                 int(req.get("seed") or 1247),
                 os.path.join(work, "tmp"),
             )
             t_engine = time.time()
-            proc = subprocess.run(
-                cmd, cwd=ENGINE_DIR, capture_output=True, text=True, timeout=ENGINE_TIMEOUT
-            )
+            proc = _run_engine(cmd)
             engine_seconds = round(time.time() - t_engine, 2)
             if proc.returncode != 0 or not os.path.exists(out):
                 # The engine prints its traceback to stderr and its progress
@@ -329,12 +568,9 @@ def _run_presenter(req: Dict[str, Any]) -> None:
             sync: Dict[str, Any] = {}
             if req.get("measure_sync", True):
                 _set(job_id, stage="measuring sync", progress=97)
-                # Three readings, because each rules something out: the
-                # recording as uploaded (what good looks like for this face),
-                # the engine's own output, and the file actually delivered.
-                # If the last two differ, the final mux moved something.
+                # Two readings: the engine's own output, and the file actually
+                # delivered. If they differ, the final mux moved something.
                 sync = {
-                    "source": _measure_sync(src_video, work),
                     "engine_output": _measure_sync(out, work),
                     "delivered": _measure_sync(final, work),
                 }
@@ -349,7 +585,7 @@ def _run_presenter(req: Dict[str, Any]) -> None:
                 duration=round(_probe_seconds(final), 2),
                 bytes=os.path.getsize(final),
                 gen_seconds=round(time.time() - t0, 2),
-                engine=ENGINE_NAME,
+                engine=engine,
                 engine_seconds=engine_seconds,
                 audio_seconds=round(audio_seconds, 2),
                 gpu=_gpu_name(),
@@ -403,8 +639,48 @@ def _run_presenter(req: Dict[str, Any]) -> None:
 # routes
 # ---------------------------------------------------------------------------
 
-def create_presenter_router(check_secret) -> APIRouter:
+def health_report(provider: str) -> Dict[str, Any]:
+    with _LOCK:
+        busy = any(j.get("status") == "running" for j in RENDERS.values())
+    engines = installed_engines()
+    report: Dict[str, Any] = {
+        "ok": True,
+        "provider": provider,
+        # Only claimed when an engine and its weights are really there — a
+        # capability is a promise the gateway routes work on.
+        "capabilities": ["presenter-relip"] if engines else [],
+        "engines": engines,
+        "engine": pick_engine(None, engines, PREFERRED_ENGINE),
+        "version": PRESENTER_VERSION,
+        "busy": busy,
+        "gpu": _gpu_name(),
+    }
+    if INSTALL["state"] != "idle":
+        report["install"] = dict(INSTALL)
+    return report
+
+
+def create_presenter_router(
+    check_secret,
+    provider: str = "custom",
+    shared_lock: Optional[Any] = None,
+    before_engine: Optional[Callable[[], None]] = None,
+) -> APIRouter:
+    """Routes, including /health. Mount at the root (Modal) or under a prefix
+    (a notebook, where the voice server already owns /render and /health).
+
+    `shared_lock` is the voice server's GPU lock when the two share a process;
+    see _run_engine.
+    """
+    global _SHARED_GPU_LOCK, _BEFORE_ENGINE
+    _SHARED_GPU_LOCK = shared_lock
+    _BEFORE_ENGINE = before_engine
+
     router = APIRouter()
+
+    @router.get("/health")
+    def health() -> dict:
+        return health_report(provider)
 
     @router.post("/render", status_code=202)
     async def start(request: Request, x_backend_secret: Optional[str] = Header(None)) -> dict:
@@ -414,12 +690,19 @@ def create_presenter_router(check_secret) -> APIRouter:
             value = str(req.get(field) or "")
             if not value.startswith("https://"):
                 raise HTTPException(status_code=400, detail=f"{field} must be an https URL")
+        if not installed_engines():
+            # Refuse up front, so the gateway moves on to the next backend
+            # instead of handing over a clip that can only fail.
+            raise HTTPException(status_code=503, detail="the lip-sync engine is not ready here")
         job_id = str(req.get("job_id") or uuid.uuid4().hex)
         req["job_id"] = job_id
         # Our own public address, as the caller reached us — used to keep
-        # the container awake for the length of the job.
+        # the container awake for the length of the job. Includes the mount
+        # prefix, so it works at the root and under /presenter alike.
         host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
-        req["_self_url"] = f"https://{host}" if host and "localhost" not in host else ""
+        path = request.url.path
+        mount = path[: -len("/render")] if path.endswith("/render") else ""
+        req["_self_url"] = f"https://{host}{mount}" if host and "localhost" not in host else ""
         with _LOCK:
             RENDERS[job_id] = {
                 "status": "queued",
@@ -471,6 +754,7 @@ def create_presenter_router(check_secret) -> APIRouter:
 
 
 def create_presenter_app(provider: str = "custom"):
+    """Standalone app — used by the Modal function."""
     from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
 
@@ -482,24 +766,5 @@ def create_presenter_app(provider: str = "custom"):
         if expected and secret != expected:
             raise HTTPException(status_code=401, detail="bad backend secret")
 
-    @app.get("/health")
-    def health() -> dict:
-        with _LOCK:
-            busy = any(j.get("status") == "running" for j in RENDERS.values())
-        engine_ready = os.path.isdir(ENGINE_DIR) and os.path.exists(
-            os.path.join(ENGINE_DIR, UNET_CKPT)
-        )
-        return {
-            "ok": True,
-            "provider": provider,
-            # Only claimed when the engine and its weights are really there —
-            # a capability is a promise the gateway routes work on.
-            "capabilities": ["presenter-relip"] if engine_ready else [],
-            "engine": ENGINE_NAME,
-            "version": PRESENTER_VERSION,
-            "busy": busy,
-            "gpu": _gpu_name(),
-        }
-
-    app.include_router(create_presenter_router(check))
+    app.include_router(create_presenter_router(check, provider=provider))
     return app

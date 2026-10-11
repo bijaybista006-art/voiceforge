@@ -185,6 +185,13 @@ def _bake_presenter_weights() -> None:
     ):
         hf_hub_download("ByteDance/LatentSync-1.6", name, local_dir=ckpt)
 
+    # The 256 px checkpoint a free notebook GPU runs. Baked here too so the
+    # two can be compared on the same clip, and requested with
+    # engine: "latentsync-1.5" when speed matters more than sharpness.
+    hf_hub_download(
+        "ByteDance/LatentSync-1.5", "latentsync_unet.pt", local_dir=os.path.join(ckpt, "v15")
+    )
+
     snapshot_download("stabilityai/sd-vae-ft-mse")
 
     models = os.path.join(ckpt, "auxiliary", "models")

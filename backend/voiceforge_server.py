@@ -1234,6 +1234,42 @@ def _run_job(job: Dict[str, Any]) -> None:
 # app
 # ---------------------------------------------------------------------------
 
+RAW_BASE = os.environ.get(
+    "VOICEFORGE_RAW_BASE", "https://raw.githubusercontent.com/waytobijay/Bbox-Audio/main/backend"
+)
+
+
+def _load_presenter_module():
+    """Import the presenter service, fetching its file first if it is absent.
+
+    A notebook downloads a fixed list of files when it starts, written into
+    the notebook itself. This file was added after those notebooks were
+    created, so rather than ask for the notebook to be re-imported, the
+    server fetches the one file it is missing — from the same place the
+    notebook fetched the others.
+    """
+    import importlib
+
+    try:
+        return importlib.import_module("backend.voiceforge_presenter")
+    except ImportError:
+        pass
+    here = os.path.dirname(os.path.abspath(__file__))
+    dest = os.path.join(here, "voiceforge_presenter.py")
+    with urllib.request.urlopen(f"{RAW_BASE}/voiceforge_presenter.py", timeout=60) as r:  # noqa: S310
+        data = r.read()
+    if len(data) < 4000:
+        raise RuntimeError("the presenter service file did not download")
+    with open(dest, "wb") as f:
+        f.write(data)
+    importlib.invalidate_caches()
+    try:
+        return importlib.import_module("backend.voiceforge_presenter")
+    except ImportError:
+        # Loaded as a top-level module rather than as part of a package.
+        return importlib.import_module("voiceforge_presenter")
+
+
 def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
     app = FastAPI(title="VoiceForge backend", version=VERSION)
     app.add_middleware(
@@ -1259,6 +1295,29 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
             render_mounted = True
         except Exception as e:  # noqa: BLE001
             print("[voiceforge] render routes unavailable:", e, flush=True)
+
+    # Presenter video, notebooks only. Modal runs it as its own function. It
+    # is mounted under /presenter because this app already owns /render and
+    # /health, and its engine is installed in the background into a private
+    # virtualenv — nothing here waits for that, and if any of it fails the
+    # voice server carries on exactly as it would have without it.
+    if provider in ("colab", "kaggle") and os.environ.get("VOICEFORGE_PRESENTER", "1") != "0":
+        try:
+            presenter = _load_presenter_module()
+            app.include_router(
+                presenter.create_presenter_router(
+                    _check,
+                    provider=provider,
+                    # On a single GPU a clip and a narration must not overlap.
+                    shared_lock=_GPU_LOCK,
+                    before_engine=lambda: torch.cuda.empty_cache() if torch.cuda.is_available() else None,
+                ),
+                prefix="/presenter",
+            )
+            presenter.start_install_in_background()
+            print("[voiceforge] presenter service mounted; engine installing in the background", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print("[voiceforge] presenter service unavailable:", e, flush=True)
 
     @app.get("/health")
     def health() -> dict:

@@ -135,6 +135,9 @@ export interface BackendRegistration {
    * every probe and knows nothing about presenter video.
    */
   presenterCapabilities?: string[];
+  /** When the presenter address was last asked, and which address that was. */
+  presenterProbedAt?: number;
+  presenterProbedUrl?: string;
 }
 
 /** A row in the registry, as stored. */

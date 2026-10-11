@@ -13,7 +13,11 @@ import {
   presenterReadiness,
   slugifyPresenterName,
 } from "../server/presenters";
-import { presenterCandidateUrl, presenterUrlOf } from "../server/presenterjobs";
+import {
+  presenterCandidateUrl,
+  presenterUrlOf,
+  shouldProbePresenter,
+} from "../server/presenterjobs";
 import type { BackendProvider, BackendView } from "../types";
 
 /**
@@ -251,5 +255,61 @@ describe("where presenter work is sent", () => {
     expect(pickPresenterBackends([modal], "recording")).toHaveLength(1);
     expect(pickPresenterBackends([modal], "image")).toHaveLength(0);
     expect(presenterReadiness([modal], "recording")).toEqual({ ready: true, provider: "modal" });
+  });
+});
+
+describe("finding a notebook's presenter service", () => {
+  it("looks under /presenter on the notebook's own tunnel", () => {
+    expect(presenterCandidateUrl("https://abc.trycloudflare.com", true)).toBe(
+      "https://abc.trycloudflare.com/presenter"
+    );
+  });
+
+  it("asks an address it has never asked", () => {
+    expect(shouldProbePresenter({ url: "https://abc.trycloudflare.com", selfRegistered: true })).toBe(
+      true
+    );
+  });
+
+  it("stops asking once the engine is there", () => {
+    expect(
+      shouldProbePresenter({
+        url: "https://abc.trycloudflare.com",
+        selfRegistered: true,
+        presenterProbedUrl: "https://abc.trycloudflare.com/presenter",
+        presenterProbedAt: 0,
+        presenterCapabilities: ["presenter-relip"],
+      })
+    ).toBe(false);
+  });
+
+  it("asks again after a pause while the engine is still installing", () => {
+    const row = {
+      url: "https://abc.trycloudflare.com",
+      selfRegistered: true,
+      presenterProbedUrl: "https://abc.trycloudflare.com/presenter",
+      presenterProbedAt: 1_000_000,
+      presenterCapabilities: [],
+    };
+    expect(shouldProbePresenter(row, 1_000_000 + 30_000)).toBe(false);
+    expect(shouldProbePresenter(row, 1_000_000 + 120_000)).toBe(true);
+  });
+
+  it("asks again when a new session gives the notebook a new address", () => {
+    expect(
+      shouldProbePresenter({
+        url: "https://new.trycloudflare.com",
+        selfRegistered: true,
+        presenterProbedUrl: "https://old.trycloudflare.com/presenter",
+        presenterProbedAt: Date.now(),
+        presenterCapabilities: ["presenter-relip"],
+      })
+    ).toBe(true);
+  });
+
+  it("never asks a hand-added address that has no presenter service to find", () => {
+    expect(shouldProbePresenter({ url: "https://my.server.example", selfRegistered: false })).toBe(
+      false
+    );
   });
 });

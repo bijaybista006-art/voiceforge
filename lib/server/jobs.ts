@@ -101,6 +101,7 @@ export interface Job {
     steps?: number;
     guidance?: number;
     seed?: number;
+    engine?: string;
   };
   /** 0-100 while rendering, so a long job isn't a black box. */
   progress?: number;

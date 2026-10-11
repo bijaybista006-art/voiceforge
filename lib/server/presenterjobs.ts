@@ -48,10 +48,35 @@ export function presenterUrlOf(b: Pick<BackendView, "url" | "presenterUrl">): st
  * only in the function name. Derive the second from the first, as the render
  * URL already is, instead of asking for a field nobody could fill in.
  */
-export function presenterCandidateUrl(apiUrl: string): string | null {
+export function presenterCandidateUrl(apiUrl: string, selfRegistered = false): string | null {
   const MODAL_API = "-api.modal.run";
   const url = apiUrl.replace(/\/+$/, "");
-  return url.endsWith(MODAL_API) ? url.slice(0, -MODAL_API.length) + "-presenter.modal.run" : null;
+  if (url.endsWith(MODAL_API)) return url.slice(0, -MODAL_API.length) + "-presenter.modal.run";
+  // A notebook serves presenter clips from the same tunnel as voice, under
+  // /presenter, because the voice server already owns /render and /health.
+  return selfRegistered ? `${url}/presenter` : null;
+}
+
+/**
+ * How long an "I can't do that yet" answer is believed. A notebook installs
+ * its engine in the background for several minutes after it starts, so "no"
+ * is asked again; "yes" is kept for the life of that address.
+ */
+const PRESENTER_REPROBE_AFTER_MS = 90_000;
+
+/** Whether a backend's presenter address should be asked (again) right now. */
+export function shouldProbePresenter(
+  b: Pick<
+    BackendView,
+    "url" | "selfRegistered" | "presenterCapabilities" | "presenterProbedAt" | "presenterProbedUrl"
+  >,
+  now = Date.now()
+): boolean {
+  const candidate = presenterCandidateUrl(b.url, b.selfRegistered !== false);
+  if (!candidate) return false;
+  if (b.presenterProbedUrl !== candidate) return true; // never asked this address
+  if (b.presenterCapabilities?.length) return false; // it said yes
+  return now - (b.presenterProbedAt ?? 0) > PRESENTER_REPROBE_AFTER_MS;
 }
 
 /**
@@ -70,21 +95,29 @@ export async function discoverPresenter(
 ): Promise<string[]> {
   const backend = await getBackend(provider);
   if (!backend) return [];
-  const candidate = presenterCandidateUrl(backend.url);
+  const candidate = presenterCandidateUrl(backend.url, backend.selfRegistered !== false);
   if (!candidate) return backend.presenterCapabilities ?? [];
 
+  // Recorded whatever the answer, so a backend that says "not yet" — or does
+  // not answer at all — is asked again after a pause, not on every page view.
+  const asked = { presenterProbedAt: Date.now(), presenterProbedUrl: candidate };
   try {
     const res = await fetch(`${candidate}/health`, {
       headers: backendHeaders(),
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!res.ok) return backend.presenterCapabilities ?? [];
+    if (!res.ok) {
+      // An older notebook has no /presenter at all: that is a "no".
+      await updateBackend(provider, { ...asked, presenterCapabilities: [] });
+      return [];
+    }
     const health = (await res.json()) as { capabilities?: string[] };
     const caps = (health.capabilities ?? []).filter((c) => c.startsWith("presenter-"));
-    await updateBackend(provider, { presenterUrl: candidate, presenterCapabilities: caps });
+    await updateBackend(provider, { ...asked, presenterUrl: candidate, presenterCapabilities: caps });
     return caps;
   } catch {
     // Asleep, not deployed, or slow to wake. Keep whatever was known.
+    await updateBackend(provider, asked).catch(() => {});
     return backend.presenterCapabilities ?? [];
   }
 }
@@ -100,10 +133,7 @@ export async function discoverPresenter(
  */
 export async function discoverMissingPresenters(timeoutMs = 15_000): Promise<boolean> {
   const unknown = (await listBackends()).filter(
-    (b) =>
-      b.enabled &&
-      b.presenterCapabilities === undefined &&
-      presenterCandidateUrl(b.url) !== null
+    (b) => b.enabled && b.health !== "offline" && shouldProbePresenter(b)
   );
   if (!unknown.length) return false;
   const found = await Promise.all(unknown.map((b) => discoverPresenter(b.provider, timeoutMs)));
@@ -114,6 +144,8 @@ export interface PresenterOptions {
   steps?: number;
   guidance?: number;
   seed?: number;
+  /** "latentsync-1.6" (sharper, needs a large GPU) or "latentsync-1.5". */
+  engine?: string;
 }
 
 export interface PresenterJobInput extends PresenterOptions {
@@ -226,6 +258,9 @@ async function dispatchPresenter(
     steps: opts.steps,
     guidance: opts.guidance,
     seed: opts.seed,
+    // Which engine version, when the backend has a choice. One that only has
+    // the small engine uses it regardless.
+    engine: opts.engine,
     callback_url: `${appUrl.replace(/\/+$/, "")}/api/internal/jobs/${job.id}/complete`,
     callback_token: await callbackToken(job.id),
   };
@@ -281,6 +316,7 @@ export async function createAndDispatchPresenter(
       steps: input.steps,
       guidance: input.guidance,
       seed: input.seed,
+      engine: input.engine,
     },
   });
   const running = await dispatchPresenter(job, presenter, targets, input.audioUrl, appUrl, input);
@@ -363,6 +399,7 @@ export async function createPresenterFromText(
       steps: input.steps,
       guidance: input.guidance,
       seed: input.seed,
+      engine: input.engine,
     },
   });
   return { job, presenter, voice };

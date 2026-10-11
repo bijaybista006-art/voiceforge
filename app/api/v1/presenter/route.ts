@@ -45,6 +45,12 @@ const schema = z
     /** 1.0–3.0. Higher follows the audio more closely and can jitter. */
     guidance: z.number().min(1).max(3).optional(),
     seed: z.number().int().min(0).max(2 ** 31).optional(),
+    /**
+     * Which lip-sync engine, where the backend has both: 1.6 is sharper and
+     * needs a large GPU, 1.5 is what a free notebook GPU runs. A backend
+     * with only one uses the one it has.
+     */
+    engine: z.enum(["latentsync-1.6", "latentsync-1.5"]).optional(),
     callback_url: z.string().url().max(1000).optional(),
   })
   // Unknown fields are ignored, never a 400 — the same promise the other
@@ -68,7 +74,7 @@ export async function POST(req: Request) {
   }
 
   const appUrl = appUrlFrom(req);
-  const opts = { steps: body.steps, guidance: body.guidance, seed: body.seed };
+  const opts = { steps: body.steps, guidance: body.guidance, seed: body.seed, engine: body.engine };
 
   try {
     if (body.text) {
