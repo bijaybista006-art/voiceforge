@@ -136,6 +136,8 @@ _LAST_ALIGN: Dict[str, Any] = {}
 # Set per take. When positive, a take is ended this many frames after the
 # text is finished, provided at least `min_frames` have been generated.
 _TAIL_RULE = {"frames": 0, "min_frames": 0}
+# Which loaded model produced the last take ("chatterbox-ne" or the fallback).
+_TAIL_SEEN = {"model": ""}
 # How long the Nepali model may keep going once it has reached the end of its
 # text. The last syllable and the danda still have to be spoken after that
 # point — about five frames — so ten leaves room and no more.
@@ -604,6 +606,7 @@ def _generate_chunk(
         kwargs = {k: v for k, v in kwargs.items() if k in accepted}
         _LAST_STOP["why"] = ""
         _LAST_ALIGN.clear()
+        _TAIL_SEEN["model"] = model
         if model == "chatterbox-ne" and NE_TAIL_FRAMES > 0:
             # 25 frames a second. The guard is 60% of what the words should
             # need, so a wrong "finished" early in a sentence cannot end it.
@@ -740,6 +743,62 @@ def _gen_clean(
         if raw <= cap * 1.5 + 0.6:
             return trim_speech(audio, sr, max_seconds=cap, expected=expected), sr, take + 1
     return trim_speech(best[0], sr, max_seconds=cap, expected=expected), sr, 3
+
+
+def _gen_ne(
+    text: str,
+    voice_id: str,
+    *,
+    model: str,
+    engine: str,
+    language: str,
+    st: Dict[str, float],
+    seed: int,
+) -> tuple:
+    """One plain Nepali take, ended where the model finished its text.
+
+    The end of the take comes from the alignment check (see NE_TAIL_FRAMES),
+    which knows the frame at which the text was finished. Nothing here guesses
+    from syllable counts: that estimate runs short for this voice, and
+    trimming by it cut the last two seconds off an ordinary sentence.
+
+    The one thing still checked is that the model reached the end of the text
+    at all. A take that never did is re-rolled with a new seed, up to three
+    takes; if none gets there the first is kept, since a complete guess is not
+    available and the first is at least the requested seed.
+    Returns (audio, sr, takes).
+    """
+    first = None
+    sr = 24000
+    for take in range(3):
+        audio, sr, _ = _generate_chunk(
+            text,
+            voice_id,
+            model=model,
+            seed=seed + take * 7919,
+            language=language,
+            engine=engine,
+            exaggeration=st["exaggeration"],
+            cfg=st["cfg"],
+            temperature=st["temperature"],
+        )
+        if first is None:
+            first = audio
+        # Only the Nepali model reports this; on the Hindi fallback there is
+        # no signal to judge by, so the first take stands.
+        if _LAST_ALIGN.get("completed_at") is not None or _TAIL_SEEN["model"] != "chatterbox-ne":
+            return _fade_out(audio, sr), sr, take + 1
+    return _fade_out(first, sr), sr, 3
+
+
+def _fade_out(audio: np.ndarray, sr: int, seconds: float = 0.03) -> np.ndarray:
+    """A take ended by a rule stops on a frame boundary; fade so it cannot click."""
+    n = min(len(audio), int(sr * seconds))
+    if n < 2:
+        return audio
+    out = np.array(audio, dtype=np.float32, copy=True)
+    out[-n:] *= np.linspace(1.0, 0.0, n, dtype=np.float32)
+    return out
 
 
 def _render_expressive(
@@ -973,10 +1032,8 @@ def _run_job(job: Dict[str, Any]) -> None:
             _BUSY = True
             for i, text in enumerate(chunks if not rendered else []):
                 if is_ne:
-                    # Nepali takes are checked against how long the words
-                    # could honestly need; see _gen_clean. A lone short line
-                    # is where the model runs on past the text.
-                    audio, sr, takes = _gen_clean(
+                    # Ended where the model finished its text; see _gen_ne.
+                    audio, sr, takes = _gen_ne(
                         text,
                         job["voice_id"],
                         model=params.get("model", "chatterbox"),
@@ -1174,13 +1231,12 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
             # a hard 500, while the identical text through a job spoke Nepali.
             plan = resolve_engine(p.get("engine"), p.get("fallback"), p)
             if str(p.get("language", "")).lower() == "ne" or plan["engine"] == "chatterbox-ne":
-                # The studio's one-chunk path gets the same protection a job
-                # does: a take that runs on past the text is re-rolled, and
-                # whatever is left after the words is cut.
+                # The studio's one-chunk path gets the same treatment a job
+                # does: the take ends where the model finished its text.
                 t0 = time.time()
                 with _GPU_LOCK:
                     _BUSY = True
-                    audio, sr, _takes = _gen_clean(
+                    audio, sr, _takes = _gen_ne(
                         p["text"],
                         p["voice_id"],
                         model=p.get("model", "chatterbox"),
