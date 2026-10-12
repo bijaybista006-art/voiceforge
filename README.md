@@ -24,9 +24,8 @@ In Vercel → your project:
 
 | Where | What |
 |---|---|
-| **Storage** → Marketplace | **Upstash Redis** (free) — settings, keys, backend registry, jobs |
-| **Storage** → Blob | **Vercel Blob**, access **Public** — voice clips and generated audio |
-| **Settings → Environment Variables** | `REGISTRATION_TOKEN` and `BACKEND_SECRET` — two long random strings |
+| **Settings → Environment Variables** | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` — from a free Supabase project set up as in [docs/supabase-setup.md](docs/supabase-setup.md). It holds settings, keys, jobs, voice clips and generated audio |
+| same place | `REGISTRATION_TOKEN` and `BACKEND_SECRET` — two long random strings |
 | (optional) same place | `ADMIN_PASSWORD` + `SESSION_SECRET` — turns on the login gate |
 
 Generate the random values with:
@@ -39,7 +38,7 @@ Then **redeploy** — environment variables only reach the app on a fresh build.
 
 The login gate only switches on when **both** `ADMIN_PASSWORD` and `SESSION_SECRET` exist. That's deliberate: deploying can never lock you out of your own site before you're ready.
 
-If Blob doesn't add `BLOB_READ_WRITE_TOKEN` automatically, open the Blob store → copy the token from its `.env.local` panel → add it as an environment variable by hand.
+Vercel hosts the app and nothing else: there is no Vercel storage product to add.
 
 ---
 
@@ -247,7 +246,7 @@ Use your own face, a generated or fictional one, or a real person who has given 
 - **Colab free tier gives you a few hours per session**, and there's a rough daily cap. More than enough for a video or two a day. Not enough to run a service on.
 - **The backend URL changes every session.** By design — it's a fresh tunnel each time. You don't see it: the notebook registers it for you.
 - **The Colab tab must stay open** while you generate.
-- **Your voice sample never leaves your control.** It goes from your browser to *your* Vercel Blob store, and from there to *your* GPU session. Not to Anthropic, not to any TTS company.
+- **Your voice sample never leaves your control.** It goes from your browser to *your* Supabase bucket, and from there to *your* GPU session. Not to Anthropic, not to any TTS company.
 - **Languages:** the backend runs Chatterbox Multilingual — 23 languages including English and Hindi (pick one in Model controls). Number expansion ("15GB" → "fifteen gigabytes") only applies to English scripts; other languages keep digits for the model to read in-language.
 - **Nepali** is *not* one of those 23. It runs on a separate fine-tuned checkpoint (`chatterbox-ne`, the Nepali T3 from `Firoj112/chatterbox-nepali-runs`), which every backend loads the first time a Nepali request arrives. English words inside Nepali text are respelled in Devanagari before they reach the model, so each sentence is read whole by one model; add your own spellings with `lexicon`. If the checkpoint cannot be loaded the job fails and its error says why; Nepali is never read by another language's model. A finished job reports `engine_used: "chatterbox-ne"` and a `diagnostics` block saying what each chunk did. Two things the checkpoint needs, both handled for you and both easy to break: it must be called with its own `[ne]` language tag, and chunks should stay under 200 characters. `VOICEFORGE_NE_MODEL` / `VOICEFORGE_NE_FILE` point the backend at a different checkpoint.
 
@@ -261,7 +260,7 @@ npm run dev    # http://localhost:3000
 npm test       # chunker + normalization unit tests
 ```
 
-The app is a thin client — no model ever runs in a Next.js route. Scripts and generated audio stay in your browser's IndexedDB; voices live in the server-side library (Redis + Blob) so every backend can reach them. Speech requests go through `/api/gateway/*`, which is the only place that knows a backend URL or the backend secret. See `.claude_context.md` for architecture constraints.
+The app is a thin client — no model ever runs in a Next.js route. Scripts and generated audio stay in your browser's IndexedDB; voices live in the server-side library (Supabase) so every backend can reach them. Speech requests go through `/api/gateway/*`, which is the only place that knows a backend URL or the backend secret. See `.claude_context.md` for architecture constraints.
 
 ---
 

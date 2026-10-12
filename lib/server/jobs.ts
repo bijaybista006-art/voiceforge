@@ -139,7 +139,10 @@ async function indexJob(id: string): Promise<void> {
 
 export async function deleteJob(id: string): Promise<void> {
   const job = await getJob(id);
-  for (const url of [job?.audioUrl, ...(job?.items ?? []).map((i) => i.audioUrl)]) {
+  // videoUrl too: a presenter clip is copied into storage, and one left
+  // behind when its job is swept is space that never comes back. A render's
+  // video is served by its backend, which deleteBlob recognises and skips.
+  for (const url of [job?.audioUrl, job?.videoUrl, ...(job?.items ?? []).map((i) => i.audioUrl)]) {
     if (url) await deleteBlob(url);
   }
   await kvDel(KEY(id));
@@ -600,7 +603,10 @@ async function collectLocked(job: Job, result: BackendResult): Promise<Job> {
     }
     const bytes = await res.arrayBuffer();
     const suffix = backendItems.length > 1 ? `-${item.index}` : "";
-    const blob = await putBlob(`jobs/${job.id}${suffix}.${format}`, bytes, contentType);
+    const blob = await putBlob(`jobs/${job.id}${suffix}.${format}`, bytes, contentType, {
+      jobId: job.id,
+      duration: item.duration,
+    });
     items.push({
       index: item.index,
       duration: item.duration,

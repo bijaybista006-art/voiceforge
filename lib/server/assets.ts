@@ -14,6 +14,7 @@
 import type { Asset, AssetKind } from "@/lib/types";
 import { ASSET_KINDS } from "@/lib/types";
 import { deleteBlob, isBlobConfigured } from "./blob";
+import { isOurFileUrl, pathFromUrl } from "../storage";
 import { isRedisConfigured, kvDel, kvGet, kvMGet, kvSet } from "./redis";
 
 const KEY = (id: string) => `vf:asset:${id}`;
@@ -47,11 +48,8 @@ export function isAssetStorageReady(): boolean {
 }
 
 export function assetStorageHint(): string | null {
-  const missing: string[] = [];
-  if (!isRedisConfigured()) missing.push("Upstash Redis");
-  if (!isBlobConfigured()) missing.push("Blob");
-  if (!missing.length) return null;
-  return `Add ${missing.join(" and ")} in Vercel → Storage → Marketplace (free), then redeploy.`;
+  if (isRedisConfigured() && isBlobConfigured()) return null;
+  return "Add the Supabase env vars in Vercel (see docs/supabase-setup.md), then redeploy.";
 }
 
 // --- pure helpers (unit-tested) ------------------------------------------
@@ -160,10 +158,10 @@ export function assertOurBlobUrl(url: string, kind: AssetKind): void {
   } catch {
     throw new AssetError("That isn't a valid URL.");
   }
-  if (parsed.protocol !== "https:" || !parsed.hostname.endsWith(".vercel-storage.com")) {
-    throw new AssetError("That file isn't in this project's Blob store.");
+  if (parsed.protocol !== "https:" || !isOurFileUrl(url)) {
+    throw new AssetError("That file isn't in this project's storage.");
   }
-  if (!parsed.pathname.includes(`assets/${kind}/`)) {
+  if (!(pathFromUrl(url) ?? "").startsWith(`assets/${kind}/`)) {
     throw new AssetError("That file isn't stored under this asset kind.");
   }
 }

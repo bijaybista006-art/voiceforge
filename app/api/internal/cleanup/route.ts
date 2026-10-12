@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { purgeExpiredJobs } from "@/lib/server/jobs";
 import { purgeExpiredUploads } from "@/lib/server/uploads";
 import { getSettings, isRedisConfigured } from "@/lib/server/redis";
+import { purgeExpiredKeys } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,5 +36,8 @@ export async function GET(req: Request) {
   const deleted = await purgeExpiredJobs();
   // Scene uploads expire on their own schedule; brand ones never do.
   const uploads = await purgeExpiredUploads();
-  return NextResponse.json({ ok: true, deleted, uploads, retentionDays });
+  // Expired locks, counters and rate-limit windows. Reads already ignore
+  // them; this only stops them piling up.
+  const keys = await purgeExpiredKeys();
+  return NextResponse.json({ ok: true, deleted, uploads, keys, retentionDays });
 }

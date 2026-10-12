@@ -2,7 +2,6 @@ import Link from "next/link";
 import { AdminPage } from "@/components/admin/AdminShell";
 import { isAuthConfigured } from "@/lib/server/auth";
 import { getActiveSelection, listBackends } from "@/lib/server/backends";
-import { isBlobConfigured } from "@/lib/server/blob";
 import { isRedisConfigured } from "@/lib/server/redis";
 import { listVoices } from "@/lib/server/voices";
 import { IconAlert, IconArrowRight, IconCheck } from "@/components/ui/Icons";
@@ -58,8 +57,7 @@ function SetupRow({
 export default async function AdminDashboard() {
   const auth = isAuthConfigured();
   const redis = isRedisConfigured();
-  const blob = isBlobConfigured();
-  const remaining = [auth, redis, blob].filter((x) => !x).length;
+  const remaining = [auth, redis].filter((x) => !x).length;
 
   const [backends, active, voices] = await Promise.all([
     listBackends(),
@@ -112,15 +110,9 @@ export default async function AdminDashboard() {
           />
           <SetupRow
             ok={redis}
-            title="Upstash Redis"
-            detail="Stores settings, API keys, the backend registry and job history."
-            how="Vercel → Storage → Marketplace → Upstash Redis (free). It injects UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN automatically."
-          />
-          <SetupRow
-            ok={blob}
-            title="Vercel Blob"
-            detail="Stores voice reference clips and generated audio files."
-            how="Vercel → Storage → Blob (free). It injects BLOB_READ_WRITE_TOKEN automatically."
+            title="Supabase"
+            detail="Stores settings, API keys, the backend registry, job history, voice clips and generated audio."
+            how="Create a Supabase project, run supabase/migrations/0001_voiceforge_storage.sql in its SQL editor, then set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY in Vercel and redeploy."
           />
         </ul>
       </div>

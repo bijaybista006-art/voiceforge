@@ -141,7 +141,7 @@ export function ApiDocs({ appUrl }: { appUrl: string }) {
   "job_id": "8f1c…",
   "status": "done",
   "duration": 2.4,
-  "audio_url": "https://…blob.vercel-storage.com/jobs/8f1c….mp3"
+  "audio_url": "https://….supabase.co/storage/v1/object/public/voiceforge-audio/jobs/8f1c….mp3"
 }`}
         />
         <p className="mt-3">
@@ -279,22 +279,22 @@ export function ApiDocs({ appUrl }: { appUrl: string }) {
           label="Response (201)"
           code={`{
   "upload_id": "8f1c…",
-  "upload_url": "https://blob.vercel-storage.com/uploads/…/8f1c-scene-01.png",
+  "upload_url": "https://….supabase.co/storage/v1/object/upload/sign/voiceforge-audio/uploads/…/8f1c-scene-01.png?token=…",
   "method": "PUT",
-  "headers": { "authorization": "Bearer vercel_blob_client_…", "content-type": "image/png" },
-  "public_url": "https://….public.blob.vercel-storage.com/uploads/…/8f1c-scene-01.png",
+  "headers": { "content-type": "image/png", "x-upsert": "true" },
+  "public_url": "https://….supabase.co/storage/v1/object/public/voiceforge-audio/uploads/…/8f1c-scene-01.png",
   "expires_at": "2026-10-12T11:00:00.000Z"
 }`}
         />
         <Snippet
           label="2. PUT the file, sending exactly those headers"
           code={`curl -X PUT "$UPLOAD_URL" \
-  -H "authorization: $AUTH" -H "content-type: image/png" \
+  -H "content-type: image/png" -H "x-upsert: true" \
   --data-binary @scene-01.png`}
         />
         <p className="mt-3">
-          The target is locked to that one path, that content type, that size and 15 minutes. Send
-          a different type, a bigger file, or arrive late and storage refuses it.
+          The target is locked to that one path, and the link expires. The type and size you declared
+          are checked when you call complete: a file that does not match is deleted and the call fails.
         </p>
         <p className="mt-3">
           <code className="font-mono text-[12px]">purpose</code> decides how long it lives:{" "}

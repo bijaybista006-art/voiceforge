@@ -99,7 +99,10 @@ describe("assertPresenterFile", () => {
 });
 
 describe("assertOurPresenterUrl", () => {
-  const ok = "https://abc.public.blob.vercel-storage.com/presenters/recording/1-me.mp4";
+  // "Our store" is whichever Supabase project the server is pointed at.
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://proj.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
+  const ok = "https://proj.supabase.co/storage/v1/object/public/voiceforge-audio/presenters/recording/1-me.mp4";
 
   it("accepts a file in our store under the right kind", () => {
     expect(() => assertOurPresenterUrl(ok, "recording")).not.toThrow();
@@ -108,7 +111,7 @@ describe("assertOurPresenterUrl", () => {
   it("refuses a file hosted anywhere else", () => {
     expect(() =>
       assertOurPresenterUrl("https://evil.example.com/presenters/recording/x.mp4", "recording")
-    ).toThrow(/Blob store/);
+    ).toThrow(/this project.s storage/);
   });
 
   it("refuses a file stored under the other kind", () => {

@@ -1,123 +1,39 @@
 /**
- * Upstash Redis — the platform's data store (config, API keys, jobs, usage).
+ * The platform's data store (config, API keys, jobs, usage).
  *
- * Degrades gracefully on purpose: if the Upstash env vars aren't connected
- * yet, every call returns empty instead of throwing, so the app still builds,
- * deploys and runs. The admin UI surfaces "storage not connected" rather than
- * crashing. Storage is a feature, not a startup requirement.
+ * The data lives in Supabase now; see lib/storage.ts. This module keeps the
+ * names the rest of the server has always imported, so moving the store did
+ * not mean touching the voice, job or backend code that reads through it.
+ *
+ * Still degrades gracefully: with storage not connected every call returns
+ * empty instead of throwing, and the admin UI says so rather than crashing.
  */
 
-import { Redis } from "@upstash/redis";
+import {
+  getAtomicStore,
+  isStorageConfigured,
+  kvDel,
+  kvGet,
+  kvMGet,
+  kvSet,
+  storageFailure,
+  type AtomicStore,
+} from "../storage";
 
-let client: Redis | null = null;
-
-/**
- * Vercel's Upstash integration injects KV_REST_API_URL / KV_REST_API_TOKEN,
- * while Upstash's own dashboard gives you UPSTASH_REDIS_REST_*. Accept either,
- * so connecting the store from Vercel just works with nothing copied by hand.
- */
-function credentials(): { url: string; token: string } | null {
-  const url = process.env.UPSTASH_REDIS_REST_URL ?? process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN ?? process.env.KV_REST_API_TOKEN;
-  return url && token ? { url, token } : null;
-}
+export { kvDel, kvGet, kvMGet, kvSet };
 
 export function isRedisConfigured(): boolean {
-  return credentials() !== null;
+  return isStorageConfigured();
 }
 
-export function getRedis(): Redis | null {
-  const creds = credentials();
-  if (!creds) return null;
-  if (!client) client = new Redis(creds);
-  return client;
+/** Counters and locks. Null when storage is not connected. */
+export function getRedis(): AtomicStore | null {
+  return getAtomicStore();
 }
 
-/**
- * Set when a Redis call fails for a reason that is not "not configured" —
- * a quota ceiling, a network fault, an outage.
- *
- * It matters because every read below swallows errors and returns null, so
- * the app keeps serving. The cost is that a failed read is indistinguishable
- * from an empty database: a quota ceiling once made VoiceForge report that
- * every voice, backend and key had been deleted when nothing had. Callers
- * can ask whether "empty" was actually a failure.
- */
-let lastFailure: { at: number; message: string } | null = null;
-
-function noteFailure(e: unknown): void {
-  lastFailure = {
-    at: Date.now(),
-    message: e instanceof Error ? e.message.slice(0, 200) : "redis call failed",
-  };
-}
-
-/** Did a Redis call fail recently? Null when storage is healthy. */
+/** Did a storage call fail recently? Null when storage is healthy. */
 export function redisFailure(withinMs = 60_000): { at: number; message: string } | null {
-  if (!lastFailure) return null;
-  return Date.now() - lastFailure.at <= withinMs ? lastFailure : null;
-}
-
-// --- typed helpers -------------------------------------------------------
-
-export async function kvGet<T>(key: string): Promise<T | null> {
-  const r = getRedis();
-  if (!r) return null;
-  try {
-    return (await r.get<T>(key)) ?? null;
-  } catch (e) {
-    noteFailure(e);
-    console.warn("[voiceforge] redis get failed:", key, e);
-    return null;
-  }
-}
-
-/**
- * Read many keys in ONE command.
- *
- * Every list used to be 1 + N round trips: the index, then a GET per row.
- * The admin Jobs page polls every 10s and reads 50 rows, which is ~18,400
- * commands an hour from a tab sitting open doing nothing — enough to burn a
- * 500k/month Upstash free tier in about a day. MGET makes a list two
- * commands regardless of size.
- */
-export async function kvMGet<T>(keys: string[]): Promise<(T | null)[]> {
-  if (!keys.length) return [];
-  const r = getRedis();
-  if (!r) return keys.map(() => null);
-  try {
-    const rows = await r.mget<T[]>(...keys);
-    return keys.map((_k, i) => (rows?.[i] ?? null) as T | null);
-  } catch (e) {
-    noteFailure(e);
-    console.warn("[voiceforge] redis mget failed:", keys.length, e);
-    return keys.map(() => null);
-  }
-}
-
-export async function kvSet(key: string, value: unknown, ttlSeconds?: number): Promise<boolean> {
-  const r = getRedis();
-  if (!r) return false;
-  try {
-    if (ttlSeconds) await r.set(key, value, { ex: ttlSeconds });
-    else await r.set(key, value);
-    return true;
-  } catch (e) {
-    noteFailure(e);
-    console.warn("[voiceforge] redis set failed:", key, e);
-    return false;
-  }
-}
-
-export async function kvDel(key: string): Promise<boolean> {
-  const r = getRedis();
-  if (!r) return false;
-  try {
-    await r.del(key);
-    return true;
-  } catch {
-    return false;
-  }
+  return storageFailure(withinMs);
 }
 
 // --- settings ------------------------------------------------------------

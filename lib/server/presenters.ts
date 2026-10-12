@@ -22,6 +22,7 @@ import {
 } from "@/lib/types";
 import { isUsableHealth, listBackends } from "./backends";
 import { deleteBlob, isBlobConfigured } from "./blob";
+import { isOurFileUrl, pathFromUrl } from "../storage";
 import { isRedisConfigured, kvDel, kvGet, kvMGet, kvSet, redisFailure } from "./redis";
 
 const KEY = (id: string) => `vf:presenter:${id}`;
@@ -68,11 +69,8 @@ export function presenterStorageHint(): string | null {
       "this is a read failure, not a deletion."
     );
   }
-  const missing: string[] = [];
-  if (!isRedisConfigured()) missing.push("Upstash Redis");
-  if (!isBlobConfigured()) missing.push("Blob");
-  if (!missing.length) return null;
-  return `Add ${missing.join(" and ")} in Vercel → Storage → Marketplace (free), then redeploy.`;
+  if (isRedisConfigured() && isBlobConfigured()) return null;
+  return "Add the Supabase env vars in Vercel (see docs/supabase-setup.md), then redeploy.";
 }
 
 // --- pure helpers (unit-tested) ------------------------------------------
@@ -147,10 +145,10 @@ export function assertOurPresenterUrl(url: string, kind: PresenterKind): void {
   } catch {
     throw new PresenterError("That isn't a valid URL.");
   }
-  if (parsed.protocol !== "https:" || !parsed.hostname.endsWith(".vercel-storage.com")) {
-    throw new PresenterError("That file isn't in this project's Blob store.");
+  if (parsed.protocol !== "https:" || !isOurFileUrl(url)) {
+    throw new PresenterError("That file isn't in this project's storage.");
   }
-  if (!parsed.pathname.includes(`presenters/${kind}/`)) {
+  if (!(pathFromUrl(url) ?? "").startsWith(`presenters/${kind}/`)) {
     throw new PresenterError("That file isn't stored under this presenter kind.");
   }
 }

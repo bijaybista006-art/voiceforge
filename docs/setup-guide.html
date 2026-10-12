@@ -280,7 +280,7 @@
     </div>
     <div class="card">
       <h4>Storage</h4>
-      <p>Upstash Redis for settings, keys, jobs and the backend registry. Vercel Blob for voice clips and finished audio.</p>
+      <p>One Supabase project: Postgres for settings, keys, jobs and the backend registry, and a storage bucket for voice clips and finished audio.</p>
     </div>
     <div class="card">
       <h4>A GPU backend</h4>
@@ -310,27 +310,20 @@
 <section id="storage">
   <h2><span class="num">2</span>Add storage</h2>
 
-  <h3>Upstash Redis</h3>
+  <h3>Supabase</h3>
   <ol class="steps">
-    <li>Vercel → your project → <strong>Storage</strong> → <strong>Create Database</strong> → Marketplace → <strong>Upstash&nbsp;→&nbsp;Redis</strong>.</li>
-    <li>Region: <strong>Washington, D.C. (us-east-1)</strong> — that's where your functions run, so reads stay fast.</li>
-    <li>Leave <strong>Eviction off</strong>. Eviction silently drops old keys when full, which would quietly delete your voice metadata or API keys.</li>
-    <li>Plan: <strong>Free</strong>. Create, and connect it to the project.</li>
-  </ol>
-
-  <h3>Vercel Blob</h3>
-  <ol class="steps">
-    <li>Storage → <strong>Create Database</strong> → <strong>Blob</strong>.</li>
-    <li>Name it <code>voiceforge-blob</code>, region <strong>iad1</strong>.</li>
-    <li>Access: <strong>Public</strong>.</li>
-    <li>Create, and connect it to the project.</li>
+    <li><a href="https://supabase.com">supabase.com</a> → <strong>New project</strong>. Free plan; pick the region closest to you.</li>
+    <li><strong>SQL Editor</strong> → <strong>New query</strong> → paste all of <code>supabase/migrations/0001_voiceforge_storage.sql</code> → <strong>Run</strong>.</li>
+    <li><strong>Project Settings → API</strong>: copy the project URL, the anon key and the service-role key.</li>
+    <li>Vercel → your project → <strong>Settings → Environment Variables</strong>: add <code>NEXT_PUBLIC_SUPABASE_URL</code>, <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code>, then redeploy.</li>
   </ol>
   <div class="warn">
-    <p><span class="label">Public is required, not a shortcut.</span> Your GPU backend downloads the voice clip straight from its URL with no token, and the browser plays it the same way. Private would break both. File paths carry a random suffix, so they aren't guessable.</p>
+    <p><span class="label">The bucket is public on purpose.</span> Your GPU backend downloads the voice clip straight from its URL with no token, and the browser plays it the same way. Private would break both. File paths carry random ids, so they aren't guessable.</p>
   </div>
   <div class="warn">
-    <p><span class="label">If <code>BLOB_READ_WRITE_TOKEN</code> doesn't appear</span> in your environment variables, open the Blob store, find the <code>.env.local</code> panel, reveal and copy the token, then add it by hand in <strong>Settings → Environment Variables</strong>.</p>
+    <p><span class="label">The service-role key is a secret.</span> It bypasses every access rule. It belongs in Vercel's environment variables and your own <code>.env.local</code> — never in a notebook, in Modal, or in a variable whose name starts with <code>NEXT_PUBLIC_</code>.</p>
   </div>
+  <p>The full walkthrough, including a script that checks the project is set up correctly, is in <code>docs/supabase-setup.md</code>.</p>
 </section>
 
 <section id="secrets">
@@ -578,7 +571,7 @@ modal token new</code></pre></div>
   "job_id": "8f1c…",
   "status": "done",
   "duration": 2.4,
-  "audio_url": "https://….blob.vercel-storage.com/jobs/8f1c….mp3"
+  "audio_url": "https://….supabase.co/storage/v1/object/public/voiceforge-audio/jobs/8f1c….mp3"
 }</code></pre></div>
   <p><code>audio_url</code> is an ordinary HTTPS file — download it with any HTTP client. It's deleted after the retention window in <strong>Settings</strong> (7 days by default).</p>
 
@@ -758,7 +751,7 @@ modal token new</code></pre></div>
     </tr>
     <tr>
       <td>Voices page: “Storage isn't ready”</td>
-      <td>Blob has no <code>BLOB_READ_WRITE_TOKEN</code>. Copy it from the Blob store's <code>.env.local</code> panel and add it by hand.</td>
+      <td>The Supabase variables are missing or the project is paused. Check all three exist in Settings → Environment Variables, and that the project is active in the Supabase dashboard.</td>
     </tr>
     <tr>
       <td>Kaggle: <code>Temporary failure in name resolution</code>, <code>No matching distribution</code>, <code>cannot access archive</code></td>
@@ -812,7 +805,7 @@ modal token new</code></pre></div>
     <li><strong>Nepali uses its own model.</strong> The base Chatterbox Multilingual model covers 23 languages and Nepali is not one of them, so Nepali runs on a separate fine-tuned checkpoint that loads the first time you use it. The first Nepali request on a fresh backend is slow while it downloads.</li>
     <li><strong>Number expansion is English-only.</strong> “15GB” becomes “fifteen gigabytes” in English scripts; other languages keep the digits for the model to read in-language.</li>
     <li><strong>Generated audio is deleted</strong> after the retention window in Settings — 7 days by default. Download anything you want to keep.</li>
-    <li><strong>Your voice sample</strong> goes from your browser to <em>your</em> Blob store and from there to <em>your</em> GPU. Not to Anthropic, not to any TTS company.</li>
+    <li><strong>Your voice sample</strong> goes from your browser to <em>your</em> Supabase bucket and from there to <em>your</em> GPU. Not to Anthropic, not to any TTS company.</li>
   </ul>
 </section>
 

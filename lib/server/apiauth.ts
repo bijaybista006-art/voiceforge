@@ -9,14 +9,14 @@
  */
 
 import { NextResponse } from "next/server";
-import { Ratelimit } from "@upstash/ratelimit";
 import {
   DEFAULT_RATE_LIMIT_PER_MINUTE,
   quotaError,
   resolveApiKey,
   type ApiKeyRecord,
 } from "./apikeys";
-import { getRedis, isRedisConfigured } from "./redis";
+import { isRedisConfigured } from "./redis";
+import { rateLimit } from "../storage";
 
 export interface AuthOk {
   ok: true;
@@ -32,26 +32,6 @@ export function apiError(message: string, status: number, code: string): NextRes
   return NextResponse.json({ error: { message, code, type: "voiceforge_error" } }, { status });
 }
 
-// One limiter per distinct limit value — constructing these is cheap but
-// caching keeps the sliding-window state consistent across requests.
-const limiters = new Map<number, Ratelimit>();
-
-function limiterFor(perMinute: number): Ratelimit | null {
-  const redis = getRedis();
-  if (!redis) return null;
-  let limiter = limiters.get(perMinute);
-  if (!limiter) {
-    limiter = new Ratelimit({
-      redis,
-      limiter: Ratelimit.slidingWindow(perMinute, "1 m"),
-      prefix: "vf:rl",
-      analytics: false,
-    });
-    limiters.set(perMinute, limiter);
-  }
-  return limiter;
-}
-
 /**
  * A separate, slower bucket for creating uploads.
  *
@@ -60,15 +40,7 @@ function limiterFor(perMinute: number): Ratelimit | null {
  * mint a token. Counting them per hour fits how they actually arrive.
  */
 export async function checkUploadLimit(keyId: string): Promise<NextResponse | null> {
-  const redis = getRedis();
-  if (!redis) return null;
-  const limiter = new Ratelimit({
-    redis,
-    limiter: Ratelimit.slidingWindow(300, "1 h"),
-    prefix: "vf:rl:upload",
-    analytics: false,
-  });
-  const { success, reset } = await limiter.limit(keyId);
+  const { success, reset } = await rateLimit(`vf:rl:upload:${keyId}`, 300, 3600);
   if (success) return null;
   const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000));
   const response = apiError(
@@ -102,7 +74,7 @@ export async function authenticate(req: Request, chars = 0): Promise<AuthResult>
     return {
       ok: false,
       response: apiError(
-        "Storage isn't connected, so API keys can't be verified. Add Upstash Redis in Vercel.",
+        "Storage isn't connected, so API keys can't be verified. Add the Supabase env vars in Vercel.",
         503,
         "storage_unavailable"
       ),
@@ -122,9 +94,10 @@ export async function authenticate(req: Request, chars = 0): Promise<AuthResult>
   }
 
   const perMinute = key.rateLimitPerMinute || DEFAULT_RATE_LIMIT_PER_MINUTE;
-  const limiter = limiterFor(perMinute);
-  if (limiter) {
-    const { success, reset } = await limiter.limit(key.id);
+  {
+    // The limit is part of the name, so changing a key's limit starts a
+    // fresh count instead of judging it by the old window.
+    const { success, reset } = await rateLimit(`vf:rl:${key.id}:${perMinute}`, perMinute, 60);
     if (!success) {
       const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000));
       const response = apiError(

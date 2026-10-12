@@ -583,7 +583,9 @@ async function collectPresenter(job: Job, result: PresenterResult): Promise<Job>
       signal: AbortSignal.timeout(45_000),
     });
     if (!res.ok) throw new Error(`backend returned ${res.status}`);
-    const blob = await putBlob(`presenter-clips/${job.id}.mp4`, await res.arrayBuffer(), "video/mp4");
+    const blob = await putBlob(`presenter-clips/${job.id}.mp4`, await res.arrayBuffer(), "video/mp4", {
+      jobId: job.id,
+    });
     // Collected; the backend can drop its copy.
     void fetch(`${job.backendUrl}/render/${job.id}`, {
       method: "DELETE",

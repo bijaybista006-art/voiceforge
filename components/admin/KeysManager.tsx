@@ -115,8 +115,8 @@ export function KeysManager() {
         <div className="flex gap-3 rounded-2xl border border-live/30 bg-liveSoft px-5 py-4">
           <IconAlert className="mt-0.5 h-4 w-4 shrink-0 text-live" />
           <p className="text-[13px] leading-relaxed text-ink">
-            <strong>Storage isn&apos;t connected.</strong> Add Upstash Redis in Vercel → Storage →
-            Marketplace, then redeploy. Keys are stored there.
+            <strong>Storage isn&apos;t connected.</strong> Add the Supabase env vars in Vercel,
+$1then redeploy. Keys are stored there.
           </p>
         </div>
       ) : null}

@@ -32,7 +32,7 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   if (!isRedisConfigured()) {
     return NextResponse.json(
-      { error: "Storage isn't connected. Add Upstash Redis in Vercel → Storage." },
+      { error: "Storage isn't connected. Add the Supabase env vars in Vercel." },
       { status: 503 }
     );
   }

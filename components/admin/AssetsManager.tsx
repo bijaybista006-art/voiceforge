@@ -1,6 +1,6 @@
 "use client";
 
-import { upload } from "@vercel/blob/client";
+import { uploadDirect } from "@/lib/directUpload";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import type { Asset, AssetKind } from "@/lib/types";
@@ -282,12 +282,13 @@ function UploadCard({
           }
           const mime = file.type || "application/octet-stream";
           const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "-");
-          const blob = await upload(`assets/${kind}/${Date.now()}-${safeName}`, file, {
-            access: "public",
-            contentType: mime,
-            handleUploadUrl: "/api/admin/assets/upload",
-            clientPayload: JSON.stringify({ kind }),
-          });
+          const blob = await uploadDirect(
+            "/api/admin/assets/upload",
+            `assets/${kind}/${Date.now()}-${safeName}`,
+            file,
+            mime,
+            { kind }
+          );
 
           const res = await fetch("/api/admin/assets", {
             method: "POST",

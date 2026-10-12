@@ -19,7 +19,7 @@ export default async function SettingsPage() {
           <IconAlert className="mt-0.5 h-4 w-4 shrink-0 text-live" />
           <p className="text-[13px] leading-relaxed text-ink">
             <strong>Storage isn&apos;t connected.</strong> You can see the defaults below, but
-            changes can&apos;t be saved yet. Add Upstash Redis in Vercel → Storage → Marketplace
+            changes can&apos;t be saved yet. Add the Supabase env vars in Vercel
             (free), then redeploy.
           </p>
         </div>

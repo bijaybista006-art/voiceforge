@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "storage not connected — add Upstash Redis in Vercel (Storage > Marketplace), then redeploy",
+          "storage not connected — add the Supabase env vars in Vercel, then redeploy",
       },
       { status: 503 }
     );

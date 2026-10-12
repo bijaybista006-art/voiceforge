@@ -1,57 +1,62 @@
 /**
- * Hands the browser a short-lived token so it can upload a presenter file
- * straight to Blob. The file never passes through a Vercel function.
+ * Hands the browser a signed URL so it can upload a presenter file straight
+ * to storage. The file never passes through a Vercel function.
  *
- * Behind the admin session (middleware). The token is scoped to one pathname
- * under presenters/<kind>/ and to the media types that kind may be.
+ * Behind the admin session (middleware). The URL is good for one pathname
+ * under presenters/<kind>/, and only for the media types that kind may be.
  */
 
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { isPresenterKind, maxBytesFor } from "@/lib/server/presenters";
 import { PRESENTER_KINDS } from "@/lib/types";
+import { createSignedUpload } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Mirrors assertPresenterFile, so a token is never issued for a mismatch. */
+/** Mirrors assertPresenterFile, so a link is never issued for a mismatch. */
 const ALLOWED_TYPES: Record<string, string[]> = {
   recording: ["video/mp4", "video/quicktime", "video/webm"],
   image: ["image/png", "image/jpeg", "image/webp"],
 };
 
+/** "audio/*" matches any audio type; anything else must match exactly. */
+function typeAllowed(mime: string, allowed: string[]): boolean {
+  return allowed.some((a) => (a.endsWith("/*") ? mime.startsWith(a.slice(0, -1)) : a === mime));
+}
+
+const schema = z.object({
+  kind: z.string(),
+  pathname: z.string().max(300),
+  contentType: z.string().max(120),
+  size: z.number().int().positive(),
+});
+
 export async function POST(req: Request) {
-  const body = (await req.json()) as HandleUploadBody;
-
   try {
-    const result = await handleUpload({
-      body,
-      request: req,
-      onBeforeGenerateToken: async (pathname, clientPayload) => {
-        const kind = String(
-          (JSON.parse(clientPayload || "{}") as { kind?: string }).kind ?? ""
-        );
-        if (!isPresenterKind(kind)) {
-          throw new Error(`kind must be one of ${PRESENTER_KINDS.join(", ")}`);
-        }
-        if (!pathname.startsWith(`presenters/${kind}/`)) {
-          throw new Error("pathname must sit under presenters/<kind>/");
-        }
-        return {
-          allowedContentTypes: ALLOWED_TYPES[kind],
-          maximumSizeInBytes: maxBytesFor(kind),
-          addRandomSuffix: false,
-          validUntil: Date.now() + 30 * 60 * 1000,
-          tokenPayload: clientPayload ?? "",
-        };
-      },
-      // The metadata row is written by the browser's follow-up call to
-      // /api/admin/presenters: onUploadCompleted never fires against
-      // localhost, and a path that only works in production never gets tested.
-      onUploadCompleted: async () => {},
-    });
+    const body = schema.parse(await req.json());
+    const { kind } = body;
+    if (!isPresenterKind(kind)) {
+      throw new Error(`kind must be one of ${PRESENTER_KINDS.join(", ")}`);
+    }
+    // One flat file name under the kind's own folder, nothing that could
+    // climb out of it.
+    if (!new RegExp(`^presenters/${kind}/[A-Za-z0-9._-]+$`).test(body.pathname)) {
+      throw new Error("pathname must be a plain file name under presenters/<kind>/");
+    }
+    if (!typeAllowed(body.contentType, ALLOWED_TYPES[kind])) {
+      throw new Error(`${body.contentType} is not a type a ${kind} can be`);
+    }
+    const limit = maxBytesFor(kind);
+    if (body.size > limit) {
+      throw new Error(`over ${Math.round(limit / 1024 / 1024)} MB`);
+    }
 
-    return NextResponse.json(result);
+    // The metadata row is written by the browser's follow-up call to
+    // /api/admin/presenters, which checks the same rules again.
+    const signed = await createSignedUpload(body.pathname);
+    return NextResponse.json({ uploadUrl: signed.uploadUrl, publicUrl: signed.publicUrl });
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Couldn't authorise that upload." },

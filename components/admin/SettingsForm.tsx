@@ -238,7 +238,7 @@ export function SettingsForm({
       <div className="flex items-center justify-between gap-4 bg-surface2 px-5 py-3.5">
         <p className="text-[12.5px] text-muted">
           {!canSave
-            ? "Connect Upstash Redis to save changes."
+            ? "Connect Supabase to save changes."
             : dirty
               ? "You have unsaved changes."
               : "All changes saved."}

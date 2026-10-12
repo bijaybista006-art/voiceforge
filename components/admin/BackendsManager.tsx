@@ -217,8 +217,8 @@ export function BackendsManager({ appUrl }: { appUrl: string }) {
             <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-muted">
               {!data.storageConnected ? (
                 <li>
-                  Add <strong>Upstash Redis</strong> in Vercel → Storage → Marketplace, then
-                  redeploy. Registrations are stored there.
+                  Add the <strong>Supabase</strong> env vars in Vercel, then
+$1redeploy. Registrations are stored there.
                 </li>
               ) : null}
               {!data.registrationTokenSet ? (

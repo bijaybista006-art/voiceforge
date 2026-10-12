@@ -121,13 +121,16 @@ describe("sample", () => {
 });
 
 describe("assertOurBlobUrl", () => {
+  // "Our store" is whichever Supabase project the server is pointed at.
+  process.env.NEXT_PUBLIC_SUPABASE_URL = "https://proj.supabase.co";
+  process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role-key";
   /**
-   * The browser uploads straight to Blob and then tells us where the file
-   * landed. The upload token already restricts where it may write; this stops
+   * The browser uploads straight to storage and then tells us where the file
+   * landed. The signed upload URL already restricts where it may write; this stops
    * a crafted metadata call from pointing a library row at someone else's
    * file.
    */
-  const ours = "https://abc123.public.blob.vercel-storage.com/assets/music/1-track.mp3";
+  const ours = "https://proj.supabase.co/storage/v1/object/public/voiceforge-audio/assets/music/1-track.mp3";
 
   it("accepts a URL from our own store under the right kind", () => {
     expect(() => assertOurBlobUrl(ours, "music")).not.toThrow();
@@ -141,7 +144,7 @@ describe("assertOurBlobUrl", () => {
 
   it("rejects plain http", () => {
     expect(() =>
-      assertOurBlobUrl("http://abc.public.blob.vercel-storage.com/assets/music/x.mp3", "music")
+      assertOurBlobUrl("http://proj.supabase.co/storage/v1/object/public/voiceforge-audio/assets/music/x.mp3", "music")
     ).toThrow();
   });
 
@@ -156,7 +159,7 @@ describe("assertOurBlobUrl", () => {
 
   it("rejects a lookalike hostname", () => {
     expect(() =>
-      assertOurBlobUrl("https://vercel-storage.com.evil.net/assets/music/x.mp3", "music")
+      assertOurBlobUrl("https://proj.supabase.co.evil.net/storage/v1/object/public/voiceforge-audio/assets/music/x.mp3", "music")
     ).toThrow();
   });
 });

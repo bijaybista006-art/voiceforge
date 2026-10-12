@@ -46,15 +46,12 @@ export function voiceStorageHint(): string | null {
   if (failed) {
     return (
       `Storage isn't responding (${failed.message}). Your data is still there — ` +
-      "this is a read failure, not a deletion. On the Upstash free tier, check " +
-      "whether the monthly command limit is exhausted."
+      "this is a read failure, not a deletion. On the Supabase free plan, check " +
+      "whether the project has been paused for inactivity."
     );
   }
-  const missing: string[] = [];
-  if (!isRedisConfigured()) missing.push("Upstash Redis");
-  if (!isBlobConfigured()) missing.push("Blob");
-  if (!missing.length) return null;
-  return `Add ${missing.join(" and ")} in Vercel → Storage → Marketplace (free), then redeploy.`;
+  if (isRedisConfigured() && isBlobConfigured()) return null;
+  return "Add the Supabase env vars in Vercel (see docs/supabase-setup.md), then redeploy.";
 }
 
 // --- pure helpers (unit-tested) ------------------------------------------
@@ -226,7 +223,12 @@ export async function createVoice(input: CreateVoiceInput): Promise<LibraryVoice
   }
 
   const id = newVoiceId(input.name);
-  const blob = await putBlob(`voices/${id}.wav`, input.wav, "audio/wav");
+  const blob = await putBlob(`voices/${id}.wav`, input.wav, "audio/wav", {
+    voice: id,
+    language: input.language || "en",
+    duration: meta.durationSec,
+    text: input.transcript.trim(),
+  });
   const now = Date.now();
   const row: LibraryVoice = {
     id,
