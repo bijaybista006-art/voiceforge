@@ -30,7 +30,7 @@ import {
 } from "./backends";
 import { syncVoiceToBackend } from "./gateway";
 import { deleteBlob, putBlob } from "./blob";
-import { getRedis, kvDel, kvGet, kvMGet, kvSet } from "./redis";
+import { getRedis, kvDel, kvGet, kvMGet, kvScan, kvSet } from "./redis";
 import { getVoice } from "./voices";
 import { getSettings } from "./redis";
 
@@ -717,7 +717,12 @@ export async function reconcileJob(job: Job): Promise<Job> {
 export async function expiredJobs(now = Date.now()): Promise<Job[]> {
   const { retentionDays } = await getSettings();
   const cutoff = now - retentionDays * 24 * 60 * 60 * 1000;
-  return (await listJobs(INDEX_LIMIT)).filter((j) => j.createdAt < cutoff);
+  // Every job record, not just the ones still in the index: the index keeps
+  // the newest few hundred, and a job that fell off the end of it used to
+  // keep its audio for ever.
+  return (await kvScan<Job>("vf:job:"))
+    .filter((j) => j && typeof j.createdAt === "number" && j.createdAt < cutoff)
+    .sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export async function purgeExpiredJobs(): Promise<number> {

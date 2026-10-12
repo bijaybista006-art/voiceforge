@@ -347,6 +347,41 @@ export async function kvDel(key: string): Promise<boolean> {
 }
 
 /**
+ * Every live value whose key starts with `prefix`.
+ *
+ * The sweeps use this instead of an index list. An index is rewritten by
+ * read-then-write, so thirty uploads arriving together overwrite each
+ * other's entries; whatever fell out of the list was never swept, and that
+ * is how the old store filled with files nothing pointed at.
+ */
+export async function kvScan<T>(prefix: string): Promise<T[]> {
+  const db = getSupabase();
+  if (!db) return [];
+  const out: T[] = [];
+  const now = new Date().toISOString();
+  // LIKE treats % and _ as wildcards; our prefixes contain neither, but a
+  // caller's might one day.
+  const pattern = prefix.replace(/[\\%_]/g, (c) => `\\${c}`) + "%";
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db
+      .from("kv")
+      .select("value")
+      .like("key", pattern)
+      .or(`expires_at.is.null,expires_at.gt.${now}`)
+      .order("key")
+      .range(from, from + 999);
+    if (error) {
+      noteFailure(error);
+      console.warn("[voiceforge] storage scan failed:", prefix, error.message);
+      break;
+    }
+    for (const row of data ?? []) out.push(row.value as T);
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+
+/**
  * The few operations that have to be atomic, in the shape their callers
  * already use. Each is one SQL statement on the server, so two requests
  * arriving together cannot both win a lock or lose a count.

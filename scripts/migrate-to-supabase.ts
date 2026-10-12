@@ -332,20 +332,37 @@ async function main(): Promise<void> {
     if (!data || data.length < 1000) break;
   }
 
+  // Every link held by a record that is being kept, as one searchable text.
+  const referenced = JSON.stringify(
+    kv.filter((e) => !expiredKeys.has(e.key)).map((e) => e.value)
+  ).replace(/"pathname":"/g, '"pathname":"/');
+
   const tally = { copied: 0, copiedBytes: 0, existing: 0, swept: 0, sweptBytes: 0, failed: 0 };
   const failures: string[] = [];
   const copiedPaths: string[] = [];
+  /** What is being kept, by top folder: [files, bytes]. */
+  const kept = new Map<string, [number, number]>();
 
   for (const [n, f] of files.entries()) {
     const jobId = jobIdOf(f.path);
     // A generated file whose job is gone or expired is what the sweep exists
     // to remove; so is an expired scene upload.
-    const swept = !ALL && ((jobId !== null && !liveJobs.has(jobId)) || expiredUploadPaths.has(f.path));
+    // Copy what the app can still reach. A file no record points at cannot
+    // be listed, played or swept by anything; in Supabase it would only be
+    // dead weight against a 1 GB limit, for ever.
+    const swept =
+      !ALL &&
+      ((jobId !== null && !liveJobs.has(jobId)) ||
+        expiredUploadPaths.has(f.path) ||
+        !referenced.includes(`/${f.path}"`));
     if (swept) {
       tally.swept++;
       tally.sweptBytes += f.size;
       continue;
     }
+    const folder = f.path.split("/").slice(0, f.path.startsWith("assets/") ? 2 : 1).join("/");
+    const sum = kept.get(folder) ?? [0, 0];
+    kept.set(folder, [sum[0] + 1, sum[1] + f.size]);
     if (have.has(f.path)) {
       tally.existing++;
       continue;
@@ -442,12 +459,17 @@ async function main(): Promise<void> {
 
   console.log("\n================ FILES ================");
   console.log(`source                 ${files.length}  (${mb(sourceBytes)})`);
-  console.log(`not copied (expired)   ${tally.swept}  (${mb(tally.sweptBytes)})`);
+  console.log(`not copied (unreachable) ${tally.swept}  (${mb(tally.sweptBytes)})`);
   console.log(`already in Supabase    ${tally.existing}`);
   console.log(`${DRY ? "would copy" : "copied now"}             ${tally.copied}  (${mb(tally.copiedBytes)})`);
   console.log(`failed                 ${tally.failed}`);
   console.log(`expected in Supabase   ${expected}`);
   console.log(`rows in audio_files    ${ledger ?? "?"}`);
+
+  console.log("\nkept, by folder:");
+  for (const [folder, [n, bytes]] of [...kept].sort((a, b) => b[1][1] - a[1][1])) {
+    console.log(`  ${folder.padEnd(22)} ${String(n).padStart(5)}  ${mb(bytes)}`);
+  }
 
   console.log("\n================ KEYS =================");
   console.log(`source                 ${kv.length}`);

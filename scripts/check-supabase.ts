@@ -32,8 +32,21 @@ async function check(name: string, fn: () => Promise<unknown>): Promise<void> {
   }
 }
 
+/** Postgres stores an object's fields in its own order; only the content matters. */
+function canonical(v: unknown): unknown {
+  if (Array.isArray(v)) return v.map(canonical);
+  if (v && typeof v === "object") {
+    return Object.fromEntries(
+      Object.entries(v as Record<string, unknown>)
+        .sort(([x], [y]) => x.localeCompare(y))
+        .map(([k, val]) => [k, canonical(val)])
+    );
+  }
+  return v;
+}
+
 function same(got: unknown, want: unknown, what: string): void {
-  if (JSON.stringify(got) !== JSON.stringify(want)) {
+  if (JSON.stringify(canonical(got)) !== JSON.stringify(canonical(want))) {
     throw new Error(`${what}: expected ${JSON.stringify(want)}, got ${JSON.stringify(got)}`);
   }
 }

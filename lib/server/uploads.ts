@@ -15,7 +15,7 @@
  */
 
 import { deleteBlob, isBlobConfigured } from "./blob";
-import { isRedisConfigured, kvDel, kvGet, kvMGet, kvSet } from "./redis";
+import { isRedisConfigured, kvDel, kvGet, kvScan, kvSet } from "./redis";
 import { createSignedUpload, fileInfo, recordFile } from "../storage";
 
 const KEY = (id: string) => `vf:upload:${id}`;
@@ -220,26 +220,28 @@ export async function completeUpload(
 
 // --- retention ------------------------------------------------------------
 
-/** Deletes expired "scene" uploads. "brand" rows have no expiry and are kept. */
+/**
+ * Deletes expired "scene" uploads. "brand" rows have no expiry and are kept.
+ *
+ * Walks every upload record rather than the index: a video asks for thirty
+ * uploads at once, and thirty read-then-write updates to one list lose most
+ * of each other's ids. Records that fell out of the list were never swept.
+ */
 export async function purgeExpiredUploads(now = Date.now()): Promise<number> {
-  const ids = (await kvGet<string[]>(INDEX)) ?? [];
-  if (!ids.length) return 0;
-
-  const rows = await kvMGet<UploadRow>(ids.map(KEY));
-  const keep: string[] = [];
+  const rows = await kvScan<UploadRow>("vf:upload:");
   let deleted = 0;
+  const gone = new Set<string>();
 
-  for (const [i, row] of rows.entries()) {
-    if (!row) continue;
-    if (row.expiresAt !== null && row.expiresAt < now) {
-      await deleteBlob(row.publicUrl);
-      await kvDel(KEY(row.id));
-      deleted++;
-    } else {
-      keep.push(ids[i]);
-    }
+  for (const row of rows) {
+    if (!row?.id || row.expiresAt === null || row.expiresAt >= now) continue;
+    await deleteBlob(row.pathname ?? row.publicUrl);
+    await kvDel(KEY(row.id));
+    gone.add(row.id);
+    deleted++;
   }
 
-  if (deleted) await kvSet(INDEX, keep);
+  if (deleted) {
+    await kvSet(INDEX, ((await kvGet<string[]>(INDEX)) ?? []).filter((id) => !gone.has(id)));
+  }
   return deleted;
 }

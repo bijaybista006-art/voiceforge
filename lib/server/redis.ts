@@ -15,12 +15,13 @@ import {
   kvDel,
   kvGet,
   kvMGet,
+  kvScan,
   kvSet,
   storageFailure,
   type AtomicStore,
 } from "../storage";
 
-export { kvDel, kvGet, kvMGet, kvSet };
+export { kvDel, kvGet, kvMGet, kvScan, kvSet };
 
 export function isRedisConfigured(): boolean {
   return isStorageConfigured();
