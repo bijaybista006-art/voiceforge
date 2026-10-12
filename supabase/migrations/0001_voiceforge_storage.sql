@@ -228,3 +228,8 @@ grant execute on function
 to service_role;
 
 revoke all on public.kv, public.rate_limits, public.audio_files from anon, authenticated;
+
+-- A project created with "automatically expose new tables" switched off
+-- grants nothing by default, so say what the server needs outright.
+grant usage on schema public to service_role;
+grant all on public.kv, public.rate_limits, public.audio_files to service_role;
