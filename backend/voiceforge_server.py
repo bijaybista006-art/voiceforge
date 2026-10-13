@@ -1427,7 +1427,7 @@ def _refuse_if_gpu_broken() -> None:
 
 
 RAW_BASE = os.environ.get(
-    "VOICEFORGE_RAW_BASE", "https://raw.githubusercontent.com/waytobijay/Bbox-Audio/main/backend"
+    "VOICEFORGE_RAW_BASE", "https://raw.githubusercontent.com/bijaybista006-art/voiceforge/main/backend"
 )
 
 

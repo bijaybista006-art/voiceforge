@@ -53,7 +53,7 @@ const HEALTH_STYLE: Record<BackendView["health"], { dot: string; text: string; l
  * this repo, so reconnecting after a session dies is a click plus Run All
  * rather than hunting for the file.
  */
-const REPO = "waytobijay/Bbox-Audio";
+const REPO = "bijaybista006-art/voiceforge";
 const NOTEBOOK = "colab/voiceforge_server.ipynb";
 const COLAB_URL = `https://colab.research.google.com/github/${REPO}/blob/main/${NOTEBOOK}`;
 const KAGGLE_URL = `https://www.kaggle.com/kernels/welcome?src=https://github.com/${REPO}/blob/main/${NOTEBOOK}`;
