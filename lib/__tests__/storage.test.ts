@@ -31,12 +31,6 @@ describe("pathFromUrl", () => {
     expect(pathFromUrl("uploads/k/2026-10-05/id-a.png")).toBe("uploads/k/2026-10-05/id-a.png");
   });
 
-  it("still resolves a link written before the move, since paths were kept", () => {
-    expect(pathFromUrl("https://abc.public.blob.vercel-storage.com/voices/me.wav")).toBe(
-      "voices/me.wav"
-    );
-  });
-
   it("refuses a link to anywhere else", () => {
     expect(pathFromUrl("https://xyz.modal.run/render/abc/video")).toBeNull();
     expect(pathFromUrl("https://proj.supabase.co.evil.net/voices/me.wav")).toBeNull();

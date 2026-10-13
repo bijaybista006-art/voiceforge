@@ -63,7 +63,7 @@ export function JobsList() {
     // Polling only while someone is looking. Each refresh is a Redis read,
     // and a tab left open overnight used to spend tens of thousands of
     // commands a day showing a list nobody was watching — enough on its own
-    // to exhaust an Upstash free tier.
+    // to exhaust a free database tier.
     let id: ReturnType<typeof setInterval> | null = null;
     const start = () => {
       if (id === null) id = setInterval(() => void load(), 30_000);

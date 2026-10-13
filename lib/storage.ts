@@ -86,23 +86,12 @@ export function getAudioUrl(path: string): string {
 
 /**
  * The bucket path a stored URL points at, or null when it is not ours.
- *
- * A link written before the move to Supabase still names the old store; its
- * path is the same in the bucket, so it resolves too.
  */
 export function pathFromUrl(urlOrPath: string): string | null {
   if (!/^https?:\/\//i.test(urlOrPath)) return urlOrPath.replace(/^\/+/, "") || null;
   const base = publicBaseUrl();
   if (base && urlOrPath.startsWith(`${base}/`)) {
     return decodeURIComponent(urlOrPath.slice(base.length + 1).split("?")[0]);
-  }
-  try {
-    const u = new URL(urlOrPath);
-    if (u.hostname.endsWith(".blob.vercel-storage.com")) {
-      return decodeURIComponent(u.pathname.replace(/^\/+/, ""));
-    }
-  } catch {
-    /* not a URL we can read */
   }
   return null;
 }
