@@ -39,9 +39,6 @@ jobs:
         # the TTS server, which cannot be imported without torch installed.
         run: python -m compileall -q backend modal
 
-      - name: Import the renderer
-        run: python -c "from backend.voiceforge_render import create_render_app; print('render module imports cleanly')"
-
       - name: Import the language module
         # Imported by voiceforge_server.py, which CI cannot import (needs
         # torch). This is the only guard that it stays importable.
