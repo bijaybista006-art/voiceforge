@@ -241,67 +241,8 @@ export interface LibraryVoiceView extends LibraryVoice {
 }
 
 // ---------------------------------------------------------------------------
-// Asset library (long-form video)
+// Video renders (moved out of VoiceForge; old job records still carry this)
 // ---------------------------------------------------------------------------
-
-/**
- * What a render can draw on. Kinds are fixed because the renderer treats each
- * differently — music is ducked under the voice, motion is composited with
- * transparency, a banner is overlaid in a corner.
- */
-export const ASSET_KINDS = [
-  "music",
-  "sfx",
-  "motion",
-  "banner",
-  "intro",
-  "outro",
-  "clip",
-] as const;
-
-export type AssetKind = (typeof ASSET_KINDS)[number];
-
-export interface Asset {
-  id: string;
-  kind: AssetKind;
-  name: string;
-  /** Free-form sub-category, e.g. "whoosh" for an sfx, "upbeat" for music. */
-  tag?: string;
-  /** Public Blob URL — the backend downloads from here. */
-  url: string;
-  mime: string;
-  sizeBytes: number;
-  durationSec?: number;
-  createdAt: number;
-}
-
-/** One scene in a long-form render. */
-export interface VideoScene {
-  /** "image" gets Ken Burns; "clip" plays as-is, padded or trimmed to fit. */
-  type: "image" | "clip";
-  url: string;
-  /** Narration for this scene, usually a /api/v1/tts/batch result. */
-  audioUrl?: string;
-  caption?: string;
-  /** Overrides the duration; otherwise the narration decides it. */
-  seconds?: number;
-  /** Overrides the video-wide motion. "none" keeps a slide pixel-exact. */
-  motion?: "none" | "classic" | "dynamic" | "zoom_in";
-  /**
-   * Renders the picture inside a window of a branded overlay. The motion
-   * runs inside `rect`; the overlay itself never moves.
-   */
-  frame?: VideoFrame;
-  /** Used if `url` cannot be fetched — a dead clip costs its motion, not the job. */
-  posterUrl?: string;
-}
-
-export interface VideoFrame {
-  /** A PNG the size of the video, with a transparent window cut out of it. */
-  overlayUrl: string;
-  /** The window, in pixels, and inside the video's own width and height. */
-  rect: { x: number; y: number; w: number; h: number };
-}
 
 /** Where each scene lands in the finished MP4 — YouTube chapters, mostly. */
 export interface VideoChapterSpan {

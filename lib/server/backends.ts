@@ -218,19 +218,6 @@ export async function usableBackends(): Promise<BackendView[]> {
   return all.filter((b) => isUsableHealth(b.health));
 }
 
-/** Every render-capable backend in the standard order. */
-export async function usableRenderBackends(): Promise<Array<{ backend: BackendView; url: string }>> {
-  // Same standard order as TTS.
-  const all = await listBackends();
-  return all
-    .filter(
-      (b) =>
-        (b.health === "online" || b.health === "busy") &&
-        (b.capabilities ?? ["tts"]).includes("render")
-    )
-    .map((b) => ({ backend: b, url: b.renderUrl ?? b.url }));
-}
-
 // --- auth for machine endpoints ------------------------------------------
 
 async function constantTimeEquals(a: string, b: string): Promise<boolean> {

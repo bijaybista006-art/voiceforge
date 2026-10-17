@@ -11,7 +11,6 @@ import { NextResponse } from "next/server";
 import { apiError, authenticate } from "@/lib/server/apiauth";
 import { getJob, reconcileJob } from "@/lib/server/jobs";
 import { reconcilePresenter } from "@/lib/server/presenterjobs";
-import { reconcileRender } from "@/lib/server/videojobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +35,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
       job.kind === "presenter"
         ? await reconcilePresenter(job)
         : job.kind === "video"
-          ? await reconcileRender(job)
+          ? job
           : await reconcileJob(job);
   }
 

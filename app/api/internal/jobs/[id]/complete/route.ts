@@ -14,7 +14,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { collectJob, getJob, isValidCallbackToken, saveJob } from "@/lib/server/jobs";
 import { completePresenter } from "@/lib/server/presenterjobs";
-import { completeRender } from "@/lib/server/videojobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -85,14 +84,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
   }
 
-  // A video render is already a file on the backend; there is nothing to
-  // collect, only a URL to record. Pulling 400 MB through this function to
-  // put it in Blob would be slow and pointless.
+  // Video rendering moved out of VoiceForge. A late callback for an old
+  // render job is acknowledged and otherwise ignored.
   const collected =
     job.kind === "presenter"
       ? await completePresenter(job, body)
       : job.kind === "video" || body.kind === "video"
-        ? await completeRender(job, body)
+        ? job
         : await collectJob(job, body);
 
   // Hand the finished job to whoever asked for a callback (n8n's Wait node

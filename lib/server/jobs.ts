@@ -76,7 +76,7 @@ export interface Job {
   callbackSentAt?: number;
 
   // --- video renders only ---
-  /** Served by the render backend, not Blob — see lib/server/videojobs.ts. */
+  /** Old video-render jobs only; presenter clips also set it. */
   videoUrl?: string;
   videoBytes?: number;
   /**

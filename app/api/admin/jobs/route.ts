@@ -8,7 +8,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { deleteJob, listJobs, reconcileJob } from "@/lib/server/jobs";
 import { reconcilePresenter } from "@/lib/server/presenterjobs";
-import { reconcileRender } from "@/lib/server/videojobs";
 import { isRedisConfigured } from "@/lib/server/redis";
 
 export const runtime = "nodejs";
@@ -27,7 +26,7 @@ export async function GET() {
         ? (job.kind === "presenter"
             ? reconcilePresenter(job)
             : job.kind === "video"
-              ? reconcileRender(job)
+              ? Promise.resolve(job)
               : reconcileJob(job)
           ).catch(() => job)
         : job;
