@@ -155,12 +155,8 @@ curl "$STATUS_URL" -H "Authorization: Bearer $VOICEFORGE_KEY"
 | `POST /api/v1/tts/batch` | many lines → one clip each, not stitched |
 | `GET /api/v1/jobs/{id}` | poll a job |
 | `POST /api/v1/audio/speech` | OpenAI-compatible, synchronous, ≤600 chars |
-| `POST /api/v1/video` | scenes → a rendered 16:9 MP4 (async) |
-| `POST /api/v1/uploads` | somewhere to PUT an image or clip you host yourself |
 
 **Why asynchronous:** a Vercel function is capped at 60 seconds and a cold GPU can use most of that before it speaks a word. So `/tts` hands back a job id immediately. Pass `callback_url` (n8n's `{{ $execution.resumeUrl }}`) and VoiceForge POSTs the finished job to you instead of you polling.
-
-**Uploading your own visuals:** scenes take any public URL, so Pixabay and the like work directly. For images you generate yourself, `POST /api/v1/uploads` returns a short-lived target to PUT the file to and a `public_url` to use as a scene — the bytes never pass through the API, because Vercel rejects request bodies over 4.5 MB. Uploads marked `purpose: "scene"` are swept after 7 days; `"brand"` is kept.
 
 ### Expressive Nepali narration (opt-in)
 
@@ -193,7 +189,7 @@ Per-key **rate limits** and **monthly character quotas** are set when you create
 
 ## Presenter video (lip-synced intro and outro clips)
 
-A presenter is the face that speaks your intro and outro. The slideshow render in between is unchanged.
+A presenter is the face that speaks your intro and outro. Everything else in a video is rendered by your own n8n workflows, not by VoiceForge.
 
 **Add one** in **Admin → Presenters**, the same way you add a voice:
 
