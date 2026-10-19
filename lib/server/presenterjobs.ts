@@ -491,11 +491,29 @@ async function advanceFromNarration(job: Job): Promise<Job> {
   }
   if (audio.status !== "done" || !audio.audioUrl) return job;
 
+  // Send the clip to a backend exactly once. The studio polls every few
+  // seconds, and accepting a clip can take most of a minute while a cold
+  // container boots — so without this, every poll in that minute sent the
+  // same clip again. The backend then made it twice under one id, the second
+  // run overwrote the first's "done", and the finished file could not be
+  // collected. The first poll to get here claims the step; the others report
+  // the job as it is and are polled again.
+  const lockKey = `job:${job.id}:dispatching`;
+  const redis = getRedis();
+  if (redis) {
+    const owned = await redis.set(lockKey, String(Date.now()), { nx: true, ex: 120 });
+    if (owned !== "OK") return (await getJob(job.id)) ?? job;
+  }
   try {
+    // Checked again now that the step is ours: a poll that read the job a
+    // moment ago may find it was dispatched while it waited.
+    const latest = (await getJob(job.id)) ?? job;
+    if (latest.backendUrl || latest.status === "done" || latest.status === "error") return latest;
+
     const presenter = await requirePresenter(plan.id);
     const targets = await requireTargets(presenter);
     return await dispatchPresenter(
-      { ...job, audioUrl: audio.audioUrl },
+      { ...latest, audioUrl: audio.audioUrl },
       presenter,
       targets,
       audio.audioUrl,
@@ -512,6 +530,10 @@ async function advanceFromNarration(job: Job): Promise<Job> {
       status: "error",
       error: e instanceof Error ? e.message : "could not start the lip-sync",
     });
+  } finally {
+    // By now the job either records its backend or its error, so a later
+    // poll takes the normal path and never comes back here.
+    if (redis) await kvDel(lockKey).catch(() => false);
   }
 }
 
