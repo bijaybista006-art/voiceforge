@@ -99,7 +99,11 @@ export async function gatewayGenerate(body: GatewayGenerateBody): Promise<Genera
     gen_seconds?: number;
     error?: string;
     code?: string;
+    job_id?: string;
   };
+
+  // Nepali chunks come back as a background job (see the generate route).
+  if (res.status === 202 && data.job_id) return waitForStudioJob(data.job_id);
 
   if (!res.ok || !data.audio_b64) {
     const kind = OFFLINE_CODES.has(data.code ?? "") ? "network" : "api";
@@ -115,6 +119,72 @@ export async function gatewayGenerate(body: GatewayGenerateBody): Promise<Genera
 }
 
 /** Add a voice to the central library from the studio. */
+interface StudioJobStatus {
+  status?: string;
+  audio_url?: string | null;
+  duration?: number | null;
+  gen_seconds?: number | null;
+  error?: string | null;
+}
+
+/** How long a studio chunk may run as a job before the queue gives up on it. */
+export const STUDIO_JOB_LIMIT_MS = 15 * 60 * 1000;
+
+/**
+ * Follow a background job to its audio. A dropped poll is not a failed
+ * chunk — the job keeps running on the GPU — so only a run of failed polls,
+ * or the overall limit, is reported as the backend being unreachable.
+ */
+export async function waitForStudioJob(
+  jobId: string,
+  opts: { fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void>; intervalMs?: number; limitMs?: number } = {}
+): Promise<GenerateResult> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const interval = opts.intervalMs ?? 2500;
+  const limit = opts.limitMs ?? STUDIO_JOB_LIMIT_MS;
+  const started = Date.now();
+  let misses = 0;
+
+  for (let waited = 0; waited < limit && Date.now() - started < limit; waited += interval) {
+    await sleep(interval);
+    let job: StudioJobStatus;
+    try {
+      const res = await doFetch(`/api/gateway/jobs/${encodeURIComponent(jobId)}`, { cache: "no-store" });
+      if (res.status === 404) throw new BackendError("The chunk's job disappeared. Generate it again.", "api", 404);
+      if (!res.ok) throw new Error(`poll returned ${res.status}`);
+      job = (await res.json()) as StudioJobStatus;
+      misses = 0;
+    } catch (e) {
+      if (e instanceof BackendError) throw e;
+      if (++misses >= 6) throw new BackendError("Lost contact with the server while the chunk was generating.", "network");
+      continue;
+    }
+
+    if (job.status === "error") {
+      throw new BackendError(job.error || "Generation failed.", "api");
+    }
+    if (job.status === "done" && job.audio_url) {
+      let audio: Response;
+      try {
+        audio = await doFetch(job.audio_url);
+      } catch {
+        throw new BackendError("Couldn't download the finished chunk.", "network");
+      }
+      if (!audio.ok) throw new BackendError(`Couldn't download the finished chunk (${audio.status}).`, "api", audio.status);
+      // Re-typed so playback and the WAV export treat it like every other chunk.
+      const blob = new Blob([await audio.arrayBuffer()], { type: "audio/wav" });
+      return {
+        audioBlob: blob,
+        sampleRate: 24000,
+        durationSec: job.duration ?? 0,
+        genSeconds: job.gen_seconds ?? 0,
+      };
+    }
+  }
+  throw new BackendError("The chunk is taking far longer than usual. The GPU may have stopped.", "network");
+}
+
 export async function uploadLibraryVoice(input: {
   wav: Blob;
   name: string;
