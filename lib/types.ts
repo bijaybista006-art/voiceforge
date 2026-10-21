@@ -258,6 +258,42 @@ export interface VideoChapterSpan {
 }
 
 // ---------------------------------------------------------------------------
+// Training clips (recordings + exact transcripts, for fine-tuning a voice)
+// ---------------------------------------------------------------------------
+
+export interface TrainingSample {
+  id: string;
+  /** "ne" or "en" — see TRAINING_LANGUAGES. */
+  language: string;
+  /** Whose voice. A training run uses one speaker's clips. Absent on the
+   *  earliest clips, which list as "Unnamed". */
+  speaker?: string;
+  /** Exactly what is said in the clip, word for word. */
+  text: string;
+  /** Optional notes for people: tone, room, mic. Not speech. */
+  description?: string;
+  /** Read from the built-in sentence list, or recorded/uploaded freely. */
+  source: "prompt" | "free";
+  /** Which built-in sentence, when source is "prompt". */
+  promptId?: string;
+  /** Bucket path and public URL of the 24 kHz mono 16-bit WAV. */
+  path: string;
+  url: string;
+  durationSec: number;
+  sizeBytes: number;
+  /** Measured in the browser before upload. */
+  checks?: { peakDb: number; speechDb: number; longestPauseSec: number; warnings: string[] };
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface TrainingSummary {
+  language: string;
+  clips: number;
+  seconds: number;
+}
+
+// ---------------------------------------------------------------------------
 // Presenters (lip-synced intro / outro clips)
 // ---------------------------------------------------------------------------
 

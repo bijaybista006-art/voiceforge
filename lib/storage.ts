@@ -61,6 +61,7 @@ export type FileKind =
   | "presenter"
   | "asset"
   | "upload"
+  | "training"
   | "other";
 
 /** What a file is, from where it sits. Paths are namespaced by purpose. */
@@ -71,6 +72,7 @@ export function kindOfPath(path: string): FileKind {
   if (path.startsWith("presenters/")) return "presenter";
   if (path.startsWith("assets/")) return "asset";
   if (path.startsWith("uploads/")) return "upload";
+  if (path.startsWith("training/")) return "training";
   return "other";
 }
 

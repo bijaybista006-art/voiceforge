@@ -37,6 +37,9 @@ const PLATFORM: NavItem[] = [
   { href: "/admin/presenters", label: "Presenters", Icon: IconVideo },
 ];
 
+/** Kept apart from Voices: recordings collected to train a model, not voices for TTS. */
+const TRAINING: NavItem[] = [{ href: "/admin/training", label: "Training data", Icon: IconWave }];
+
 const DEVELOPER: NavItem[] = [
   { href: "/admin/keys", label: "API Keys", Icon: IconKey },
   { href: "/admin/jobs", label: "Jobs", Icon: IconSparkle },
@@ -105,6 +108,15 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="pt-4">
+            <SectionHeader label="Model training" />
+            <div className="space-y-0.5">
+              {TRAINING.map((item) => (
+                <NavRow key={item.href} item={item} active={pathname === item.href} />
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-4">
             <SectionHeader label="Developer" />
             <div className="space-y-0.5">
               {DEVELOPER.map((item) => (
@@ -142,7 +154,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
         {/* mobile nav strip */}
         <nav className="flex gap-1 overflow-x-auto border-b border-line bg-white px-3 py-2 no-scrollbar lg:hidden">
-          {[...PLATFORM, ...DEVELOPER]
+          {[...PLATFORM, ...TRAINING, ...DEVELOPER]
             .filter((i) => !i.soon)
             .map((item) => (
               <Link

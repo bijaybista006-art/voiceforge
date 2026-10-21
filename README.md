@@ -187,6 +187,19 @@ Per-key **rate limits** and **monthly character quotas** are set when you create
 
 ---
 
+## Training data (collecting recordings for fine-tuning)
+
+**Admin → Model training → Training data** collects clips to fine-tune a voice on later — Nepali and English for now. It is separate from **Voices**: nothing here appears in the voice library or is used for TTS.
+
+- Every clip belongs to a **speaker** (picked at the top of the page). A training run learns one person, so each speaker is a separate set with its own progress and downloads.
+- A clip is three parts: the **audio**, the **transcript** (exact words — what the model learns from) and an optional **description** (tone, room, mic — notes for people, never part of the transcript).
+
+- **Read a sentence** shows built-in sentences (about 80 Nepali, 60 English) weighted toward the words the model gets wrong; you record each one and the transcript is exact automatically. **Free recording** takes any clip, recorded or uploaded, with the exact words typed in.
+- Every clip is trimmed to the speech, converted to 24 kHz mono WAV and checked before it can be saved: 3–20 seconds, not distorted, not too quiet, no long pauses, and a transcript that plausibly fits the length.
+- Each language shows its progress toward 30 minutes, about enough for a first training run. **Dataset (.txt)** downloads `audio_url|transcript`, one clip per line; **JSON** downloads the full records with speaker and description. Both cover the selected speaker only.
+
+Recording changes nothing by itself — today's voices keep working exactly as before. Clips are stored in the bucket under `training/<language>/` and are never swept.
+
 ## Presenter video (lip-synced intro and outro clips)
 
 A presenter is the face that speaks your intro and outro. Everything else in a video is rendered by your own n8n workflows, not by VoiceForge.
