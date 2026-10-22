@@ -95,7 +95,8 @@ def api():
     # modal/copy_nepali_model.py. Set VOICEFORGE_NE_MODEL in the secret to
     # point elsewhere without a code change.
     os.environ.setdefault("VOICEFORGE_NE_MODEL", "waytobijay/voiceforge-nepali")
-    os.environ.setdefault("VOICEFORGE_NE_FILE", "t3_mtl_nepali_final.safetensors")
+    # The merged checkpoint; see NE_FILE in backend/voiceforge_server.py.
+    os.environ.setdefault("VOICEFORGE_NE_FILE", "t3_mtl_nepali_merged.safetensors")
 
     import sys
 

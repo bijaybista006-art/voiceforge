@@ -452,7 +452,11 @@ def _stitch(parts: List[np.ndarray], sr: int, paragraph_breaks: List[bool]) -> n
 # finished t3_mtl_nepali_final.safetensors as well as the interim epochs. The
 # gated mirrors hold the same final file; HF_TOKEN is only needed for those.
 NE_MODEL = os.environ.get("VOICEFORGE_NE_MODEL", "").strip()
-NE_FILE = os.environ.get("VOICEFORGE_NE_FILE", "t3_mtl_nepali_final.safetensors").strip()
+# The merged checkpoint (70% Nepali fine-tune, 30% base multilingual), the
+# author's recommended file. Measured Oct 2026 on the owner's recorded
+# sentences: closest to their words and pace, fewest stray start sounds, and
+# "नमस्ते" said right where the epoch-50 file said "नोमस"/"उन्र्म्श्ते".
+NE_FILE = os.environ.get("VOICEFORGE_NE_FILE", "t3_mtl_nepali_merged.safetensors").strip()
 # The language tag the Nepali engine is called with.
 #
 # The checkpoint was trained with its own tag, "[ne]", which the authors
@@ -591,16 +595,28 @@ def _load_ne_model(repo: str = "", file: str = ""):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = ChatterboxMultilingualTTS.from_pretrained(device=device)
 
-    path = (
-        repo
-        if os.path.exists(repo)
-        else hf_hub_download(
-            repo_id=repo,
+    def fetch(from_repo: str) -> str:
+        return hf_hub_download(
+            repo_id=from_repo,
             filename=file,
-            # Only needed for a gated mirror; harmless when absent.
+            # Needed for the owner's private repo; harmless when absent.
             token=os.environ.get("HF_TOKEN") or None,
         )
-    )
+
+    if os.path.exists(repo):
+        path = repo
+    else:
+        try:
+            path = fetch(repo)
+        except Exception as e:  # noqa: BLE001
+            # A file not yet copied into the owner's repo comes from the
+            # original it was copied from, so a new default never waits on
+            # the copy job; once the copy exists, it is used instead.
+            original = _NE_ALLOWED_REPOS[0]
+            if repo == original:
+                raise
+            print(f"[engine] {file} not in {repo} ({type(e).__name__}); using {original}", flush=True)
+            path = fetch(original)
 
     if path.endswith(".safetensors"):
         from safetensors.torch import load_file  # noqa: PLC0415
