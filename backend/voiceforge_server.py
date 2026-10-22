@@ -271,7 +271,11 @@ def _patch_stream_analyzer() -> None:
                 # punctuation, and a held last word sounds drawn out. So the
                 # time it may spend on the last letter is limited as well,
                 # and that limit is the one that is adjustable.
-                at_punct = punct_at is not None and frames - punct_at >= 2
+                # How long the final syllable may sound after the model reaches
+                # the closing punctuation; see NE_PUNCT_FRAMES.
+                at_punct = punct_at is not None and frames - punct_at >= (
+                    _NE_REQUEST.get("punct_frames") or NE_PUNCT_FRAMES
+                )
                 lingering = done_at is not None and frames - int(done_at) >= limit
                 if at_punct or lingering:
                     if not _LAST_STOP["why"]:
@@ -980,7 +984,13 @@ _NE_ENDING: Dict[str, int] = {"frames": 0}
 #                       checkpoint, from the configured repo or the original one.
 # They exist to compare checkpoints and input styles on the real pipeline,
 # and later to compare versions of the owner's own model.
-_NE_REQUEST: Dict[str, Any] = {"plain": False, "source": ""}
+_NE_REQUEST: Dict[str, Any] = {"plain": False, "source": "", "punct_frames": 0}
+# Frames (40 ms) a take runs on after the model reaches the closing
+# punctuation. 2 ended the old checkpoint before its stray after-sounds, but
+# on the merged one it cuts the last syllable while still loud ("स्वागत छ"
+# stops abruptly where the speaker lets it fade). A request may set
+# punct_frames (2–12) to compare.
+NE_PUNCT_FRAMES = int(os.environ.get("VOICEFORGE_NE_PUNCT_FRAMES", "2") or 2)
 _PUNC_BYPASS: Dict[str, bool] = {"on": False}
 _NE_ALLOWED_REPOS = ("Firoj112/chatterbox-nepali-runs",)
 _NE_VARIANT: Dict[str, Any] = {}
@@ -989,6 +999,10 @@ _NE_VARIANT: Dict[str, Any] = {}
 def _set_ne_request(params: Dict[str, Any]) -> None:
     _NE_REQUEST["plain"] = str(params.get("ne_text") or "").lower() == "plain"
     _NE_REQUEST["source"] = str(params.get("ne_source") or "").strip()[:200]
+    try:
+        _NE_REQUEST["punct_frames"] = min(12, max(2, int(params.get("punct_frames") or 0))) if params.get("punct_frames") else 0
+    except (TypeError, ValueError):
+        _NE_REQUEST["punct_frames"] = 0
 
 
 def _ne_model_for(source: str):

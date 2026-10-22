@@ -66,6 +66,8 @@ const paramsSchema = z
     ne_text: z.enum(["plain"]).optional(),
     /** Nepali test switch: another checkpoint, "file" or "repo:file" (own repo or the original). */
     ne_source: z.string().min(1).max(200).optional(),
+    /** Nepali test switch: frames (40 ms) a take runs on after its closing punctuation, 2–12. */
+    punct_frames: z.number().int().min(2).max(12).optional(),
     ...expressiveFields,
   })
   .optional();
