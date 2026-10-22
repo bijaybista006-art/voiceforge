@@ -83,10 +83,11 @@ export function speakerOf(s: TrainingSample): string {
   return s.speaker || UNNAMED_SPEAKER;
 }
 
-/** Every speaker with clips, most clips first. */
+/** Every speaker with clips, most clips first, spelled as first recorded. */
 export function speakersOf(samples: TrainingSample[]): string[] {
   const counts = new Map<string, { name: string; n: number }>();
-  for (const s of samples) {
+  // Oldest first, so "Bijay" typed first stays "Bijay" after a later "bijay".
+  for (const s of [...samples].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0))) {
     const name = speakerOf(s);
     const c = counts.get(name.toLowerCase()) ?? { name, n: 0 };
     c.n += 1;
