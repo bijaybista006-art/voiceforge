@@ -824,6 +824,10 @@ def _generate_chunk(
                 "text_tokens": _LAST_ALIGN.get("text_tokens"),
                 # The last second and a half: which text token each frame was on.
                 "align_tail": (_LAST_ALIGN.get("trace") or [])[-40:] or None,
+                # And the first 1.6 s: whether the model was already reading
+                # the text while the first sound played, which tells an echo
+                # of the reference's last word from a real short first word.
+                "align_head": (_LAST_ALIGN.get("trace") or [])[:40] or None,
                 "exaggeration": float(exaggeration),
                 "cfg": float(cfg),
                 "temperature": float(temperature),
