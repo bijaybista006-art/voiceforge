@@ -45,10 +45,20 @@ describe("checkReference", () => {
     expect(r.warnings).toHaveLength(2);
   });
 
-  it("passes a clip that starts on speech and pauses at 6 seconds", () => {
+  it("passes a clip whose first 6 seconds end in silence", () => {
+    // The shape of the reference that measured best: speech to ~4.2 s,
+    // quiet across the mark, then more speech.
+    const r = checkReference(join(quiet(0.05), tone(4.2), quiet(2.1), tone(3)), SR);
+    expect(r.styleCutsSpeech).toBe(false);
+    expect(r.quietBeforeMarkSec).toBeGreaterThan(1.5);
+    expect(r.warnings).toHaveLength(0);
+  });
+
+  it("flags a sentence that ends just before the mark (the nasal \"आँ\" start)", () => {
     const r = checkReference(join(quiet(0.05), tone(5.7), quiet(0.6), tone(3)), SR);
     expect(r.styleCutsSpeech).toBe(false);
-    expect(r.warnings).toHaveLength(0);
+    expect(r.quietBeforeMarkSec).toBeLessThan(0.5);
+    expect(r.warnings.join(" ")).toMatch(/आँ/);
   });
 
   it("does not judge the mark on a clip shorter than 6 seconds", () => {
@@ -57,12 +67,12 @@ describe("checkReference", () => {
 });
 
 describe("buildReference", () => {
-  it("ends a sentence just before 6 seconds and pauses across the mark", () => {
+  it("ends its sentences by about 4 seconds and keeps quiet across the mark", () => {
     const clips = [clip(2.8), clip(2.7), clip(3.3), clip(3.9)];
     const r = buildReference(clips, SR)!;
     expect(r).not.toBeNull();
-    expect(r.styleEndsAt).toBeLessThanOrEqual(STYLE_SECONDS - 0.1);
-    expect(r.styleEndsAt).toBeGreaterThanOrEqual(4.0);
+    expect(r.styleEndsAt).toBeLessThanOrEqual(STYLE_SECONDS - 1.2);
+    expect(r.styleEndsAt).toBeGreaterThanOrEqual(3.0);
     expect(checkReference(r.samples, SR).warnings).toHaveLength(0);
     expect(speechBounds(r.samples, SR)!.start).toBeLessThan(0.05);
     expect(r.durationSec).toBeGreaterThan(8);
@@ -85,9 +95,9 @@ describe("buildReference", () => {
 describe("buildReference with preferred clips", () => {
   it("takes the first 6 seconds only from the preferred clips and fills the rest from any", () => {
     const clips = [clip(3.9), clip(2.8), clip(2.7), clip(3.3)];
-    const r = buildReference(clips, SR, [1, 2])!;
-    expect(r.used.slice(0, 2).sort()).toEqual([1, 2]);
-    expect(r.used.length).toBeGreaterThan(2);
+    const r = buildReference(clips, SR, [1, 3])!;
+    expect([1, 3]).toContain(r.used[0]);
+    expect(r.used.length).toBeGreaterThan(1);
     expect(r.durationSec).toBeGreaterThan(8);
   });
 });

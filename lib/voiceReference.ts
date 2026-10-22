@@ -9,9 +9,12 @@
  * Measured in Oct 2026: a reference with 1.4 s of silence at the start, an
  * English word, and its 6-second mark in the middle of a word made every
  * Nepali take start by finishing that word — a short blip — then up to 1.8 s
- * of silence. Rebuilt from three clean training clips so that speech starts
- * at once and the 6-second mark falls in a pause, the blip and the silence
- * were gone in ten takes out of ten.
+ * of silence. Avoiding the cut word is not enough: a reference whose sentence
+ * ended 0.12 s before the mark, right after a vowel, made takes open with a
+ * nasal "आँ" (3 starts in 4). With the sentence over by about 4 s and silence
+ * across the mark, the model continues from quiet: 4 clean starts in 4, at
+ * the speaker's own pace. So the rule is: the first 6 seconds end in at least
+ * a second of silence.
  *
  * Pure functions on Float32 samples, so they are tested without a browser.
  */
@@ -20,6 +23,8 @@
 export const STYLE_SECONDS = 6;
 /** Seconds of the reference that set the sound of the voice. */
 export const VOICE_SECONDS = 10;
+/** Silence needed between the last word and the 6-second mark. */
+export const MIN_QUIET_BEFORE_MARK = 1;
 
 const FRAME_SEC = 0.02;
 /** Quieter than this, relative to the loudest frame, counts as silence. */
@@ -68,6 +73,8 @@ export interface ReferenceCheck {
   leadSec: number;
   /** True when the 6-second mark falls on sound — usually mid-word. */
   styleCutsSpeech: boolean;
+  /** Silence between the last sound before the mark and the mark itself. */
+  quietBeforeMarkSec: number;
   /** Plain-language problems, empty for a good reference. */
   warnings: string[];
 }
@@ -80,8 +87,11 @@ export function checkReference(samples: Float32Array, sr: number): ReferenceChec
   // Sound within 60 ms either side of the mark counts as cutting a word.
   const mark = Math.round(STYLE_SECONDS / FRAME_SEC);
   let styleCutsSpeech = false;
+  let quietBeforeMarkSec = STYLE_SECONDS;
   if (samples.length / sr > STYLE_SECONDS) {
     for (let i = mark - 3; i <= mark + 3; i++) if (on[i]) styleCutsSpeech = true;
+    const lastBefore = on.slice(0, mark).lastIndexOf(true);
+    quietBeforeMarkSec = lastBefore < 0 ? STYLE_SECONDS : (mark - lastBefore - 1) * FRAME_SEC;
   }
   const warnings: string[] = [];
   if (leadSec > 0.3) {
@@ -91,10 +101,14 @@ export function checkReference(samples: Float32Array, sr: number): ReferenceChec
   }
   if (styleCutsSpeech) {
     warnings.push(
-      "The 6-second mark falls in the middle of speech. The model learns your speaking style from the first 6 seconds and continues from that point, so a cut word comes out as a stray sound at the start of every clip. End a sentence just before 6 seconds."
+      "The 6-second mark falls in the middle of speech. The model learns your speaking style from the first 6 seconds and continues from that point, so a cut word comes out as a stray sound at the start of every clip. End a sentence by about 4–5 seconds and stay quiet until after 6."
+    );
+  } else if (samples.length / sr > STYLE_SECONDS && quietBeforeMarkSec < MIN_QUIET_BEFORE_MARK) {
+    warnings.push(
+      `Speech ends only ${quietBeforeMarkSec.toFixed(1)}s before the 6-second mark. The model continues from that point, and a sentence ending that close carries its last vowel into every clip as a soft "आँ". End the sentence by about 4–5 seconds and stay quiet until after 6.`
     );
   }
-  return { leadSec, styleCutsSpeech, warnings };
+  return { leadSec, styleCutsSpeech, quietBeforeMarkSec, warnings };
 }
 
 export interface BuiltReference {
@@ -107,8 +121,8 @@ export interface BuiltReference {
 }
 
 /**
- * Join clean clips into a reference: speech from the first moment, a
- * sentence ending just before 6 seconds and a pause across the mark, then
+ * Join clean clips into a reference: speech from the first moment, the
+ * sentences over by about 4 seconds and silence across the 6-second mark, then
  * more clips up to about 10 seconds. Returns null when the clips cannot fill
  * the first 6 seconds. `styleFrom` limits the first 6 seconds — the part the
  * model copies most closely — to the cleanest clips; the rest may use any.
@@ -119,18 +133,19 @@ export function buildReference(
   styleFrom?: number[]
 ): BuiltReference | null {
   const GAP = 0.25; // between sentences, as people pause
-  // The sentence must be over by here. Clips carry 40 ms of margin after
-  // their last sound, so the sound itself ends 0.14 s before the mark.
-  const LATEST = STYLE_SECONDS - 0.1;
-  const EARLIEST = 4.0; // and not so early that the pause gets long
-  const TARGET = 5.5;
+  // The sentences must be over by here, leaving more than a second of
+  // silence before the mark (see MIN_QUIET_BEFORE_MARK); and not so early
+  // that the model has little speech to learn the style from.
+  const LATEST = STYLE_SECONDS - MIN_QUIET_BEFORE_MARK - 0.2;
+  const EARLIEST = 3.0;
+  const TARGET = 4.3; // where the measured best reference ended
   const speech = clips.map((c) => trimToSpeech(c, sr));
   const len = speech.map((s) => s.length / sr);
   const ids = speech.map((_, i) => i).filter((i) => len[i] > 0.5);
   const firstIds = styleFrom ? ids.filter((i) => styleFrom.includes(i)) : ids;
 
   // The first sentences: the order of up to three clips, with a natural
-  // pause between them, whose end lands nearest a little before the mark.
+  // pause between them, whose end lands nearest the target.
   let best: { order: number[]; end: number; gap: number } | null = null;
   const consider = (order: number[]) => {
     for (const gap of [GAP, 0.2, 0.15]) {
@@ -159,7 +174,7 @@ export function buildReference(
     parts.push(speech[i]);
     used.push(i);
   });
-  const pause = Math.max(0.35, STYLE_SECONDS + 0.15 - end);
+  const pause = Math.max(1.3, STYLE_SECONDS + 0.3 - end);
   parts.push(new Float32Array(Math.round(pause * sr)));
   let t = end + pause;
   for (const i of ids) {
