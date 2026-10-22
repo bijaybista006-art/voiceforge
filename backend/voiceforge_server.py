@@ -53,6 +53,7 @@ try:
         ne_model_ending,
         ne_take_problem,
         ne_plain_text,
+        ne_end_on_dip,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -88,6 +89,7 @@ except ImportError:  # pragma: no cover - notebook layout
         ne_model_ending,
         ne_take_problem,
         ne_plain_text,
+        ne_end_on_dip,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -958,14 +960,16 @@ def _gen_ne(
             # ne_take_problem; such a take is voiced again with a new seed.
             problem = ne_take_problem(audio, sr, text)
             if not problem:
-                return _fade_out(audio, sr, 0.08), sr, take + 1
+                # A take stopped mid-way through a stray after-sound ends at
+                # the dip before it instead; see ne_end_on_dip.
+                return ne_end_on_dip(_fade_out(audio, sr, 0.08), sr), sr, take + 1
             _NE_GUARD.setdefault("rerolled", []).append(problem)
             score = len(audio) / max(1, sr) / max(1, len(text))
             if best is None or score < best[0]:
                 best = (score, audio)
     if best is not None:
         # Every take ended but none sounded whole: keep the tightest one.
-        return _fade_out(best[1], sr, 0.08), sr, 3
+        return ne_end_on_dip(_fade_out(best[1], sr, 0.08), sr), sr, 3
     _NE_GUARD["failed_takes"] = True
     return _fade_out(ne_trim_leading(first, sr), sr), sr, 3
 

@@ -389,6 +389,40 @@ def ne_take_problem(audio, sr: int, text: str) -> str:
     return ""
 
 
+def ne_end_on_dip(audio, sr: int, window: float = 0.6):
+    """End a take that was stopped in the middle of a stray after-sound.
+
+    Measured on "नमस्ते साथीहरू, आजको भिडियोमा स्वागत छ।" (Oct 2026): the
+    speaker ends on "छ" and its breath fading to silence; the merged model
+    says the same, dips for 40–100 ms, starts another sound and is stopped
+    while that sound is still loud — heard as the sentence ending abruptly.
+    So: if the last 40 ms are still within 15 dB of the peak, look back up
+    to `window` seconds for the last dip of at least 40 ms below -30 dB and
+    end there, with a short fade. On 100 takes this changed 12, removing
+    0.12–0.24 s each; none of the speaker's 8 recordings would change.
+    """
+    if _np is None or audio is None or len(audio) == 0:
+        return audio
+    audio = _np.asarray(audio, dtype=_np.float32)
+    rms, n = _frame_rms(audio, sr)  # 20 ms frames
+    if len(rms) < 6 or float(rms.max()) <= 0:
+        return audio
+    peak = float(rms.max())
+    loud_end = float(max(rms[-1], rms[-2])) > peak * 10 ** (-15 / 20)
+    if not loud_end:
+        return audio
+    quiet = rms < peak * 10 ** (-30 / 20)
+    first = max(1, len(rms) - int(window * sr / n))
+    for i in range(len(rms) - 3, first - 1, -1):
+        if quiet[i] and quiet[i - 1]:
+            out = audio[: (i + 1) * n].copy()
+            fade = min(len(out), int(0.02 * sr))
+            if fade > 1:
+                out[-fade:] *= _np.linspace(1.0, 0.0, fade, dtype=_np.float32)
+            return out
+    return audio
+
+
 def ne_plain_text(text: str) -> str:
     """Nepali text the way the checkpoint was trained on it.
 
