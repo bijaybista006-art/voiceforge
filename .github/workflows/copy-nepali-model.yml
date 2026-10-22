@@ -1,0 +1,33 @@
+name: Copy Nepali model
+
+# One-off: copies the Nepali checkpoint the backends use into your own
+# Hugging Face repo (version 1 of your model). Run it from the Actions tab.
+# Needs the same MODAL_TOKEN_ID / MODAL_TOKEN_SECRET repo secrets as the
+# Modal deploy, and HF_TOKEN in the Modal secret `voiceforge-backend`.
+on:
+  workflow_dispatch:
+    inputs:
+      dst_repo:
+        description: "Your Hugging Face model repo"
+        required: true
+        default: "waytobijay/voiceforge-nepali"
+
+jobs:
+  copy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Modal
+        run: pip install --upgrade modal
+
+      - name: Copy the checkpoint
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: modal run modal/copy_nepali_model.py --dst-repo "${{ inputs.dst_repo }}"
