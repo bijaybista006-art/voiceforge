@@ -170,7 +170,8 @@ def train(
     # ---- examples: text tokens and speech tokens, prepared once ----------------
     def text_tokens_for(text: str) -> torch.Tensor:
         prepared = punc_norm(ne_model_ending(ne_expand_digits(text)))
-        tok = model.tokenizer.text_to_tokens(prepared, language_id=ne_tag).to(device)
+        # The tokenizer returns int32; embeddings take it, cross_entropy wants int64.
+        tok = model.tokenizer.text_to_tokens(prepared, language_id=ne_tag).to(device).long()
         tok = F.pad(tok, (1, 0), value=hp.start_text_token)
         return F.pad(tok, (0, 1), value=hp.stop_text_token)
 
@@ -180,7 +181,7 @@ def train(
             wav, _ = librosa.load(io.BytesIO(fetch(c["audio_url"])), sr=S3_SR, mono=True)
             with torch.no_grad():
                 st, sl = model.s3gen.tokenizer.forward([wav.astype(np.float32)])
-            speech = torch.atleast_2d(st)[0, : int(sl.reshape(-1)[0])].to(device)
+            speech = torch.atleast_2d(st)[0, : int(sl.reshape(-1)[0])].to(device).long()
             speech = F.pad(speech, (1, 0), value=hp.start_speech_token)
             speech = F.pad(speech, (0, 1), value=hp.stop_speech_token)
             # text_to_tokens returns (1, T) already; speech is (T,) until [None].

@@ -457,6 +457,14 @@ NE_MODEL = os.environ.get("VOICEFORGE_NE_MODEL", "").strip()
 # sentences: closest to their words and pace, fewest stray start sounds, and
 # "नमस्ते" said right where the epoch-50 file said "नोमस"/"उन्र्म्श्ते".
 NE_FILE = os.environ.get("VOICEFORGE_NE_FILE", "t3_mtl_nepali_merged.safetensors").strip()
+# Notebooks opened before Oct 2026 set VOICEFORGE_NE_FILE to the epoch-50 file
+# themselves, as their default, and a restart re-runs those same saved cells —
+# so Colab and Kaggle kept the old model after the default moved. Nobody chose
+# that file on purpose; treat it as "the default". To really pin it, also set
+# VOICEFORGE_NE_FILE_PINNED=1.
+_LEGACY_NE_FILE = "t3_mtl_nepali_final.safetensors"
+if NE_FILE == _LEGACY_NE_FILE and not os.environ.get("VOICEFORGE_NE_FILE_PINNED"):
+    NE_FILE = "t3_mtl_nepali_merged.safetensors"
 # The language tag the Nepali engine is called with.
 #
 # The checkpoint was trained with its own tag, "[ne]", which the authors
@@ -1472,6 +1480,9 @@ def _run_job(job: Dict[str, Any]) -> None:
                     "repeat_rule_patched": REPEAT_LIMIT > 0 and _stream_patch_applied(),
                     "repeat_limit": REPEAT_LIMIT,
                     "ne_tag": _NE_TAG["id"],
+                    # Which Nepali checkpoint voiced this job, so a clip can
+                    # always be traced to its model.
+                    "ne_model": f"{NE_MODEL}:{NE_FILE}",
                 },
                 "chunks": diag[:200],
             }
