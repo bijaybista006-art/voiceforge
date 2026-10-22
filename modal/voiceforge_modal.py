@@ -89,8 +89,12 @@ def api():
     import os
 
     os.environ.setdefault("VOICEFORGE_VOICES_DIR", VOICES_DIR)
-    # The Nepali engine: the finished epoch-50 weights, from an ungated repo.
-    os.environ.setdefault("VOICEFORGE_NE_MODEL", "Firoj112/chatterbox-nepali-runs")
+    # The Nepali engine: the user's own model repo (private; read with HF_TOKEN
+    # from the voiceforge-backend secret). Version 1 there is an unchanged copy
+    # of Firoj112/chatterbox-nepali-runs' epoch-50 weights — see
+    # modal/copy_nepali_model.py. Set VOICEFORGE_NE_MODEL in the secret to
+    # point elsewhere without a code change.
+    os.environ.setdefault("VOICEFORGE_NE_MODEL", "waytobijay/voiceforge-nepali")
     os.environ.setdefault("VOICEFORGE_NE_FILE", "t3_mtl_nepali_final.safetensors")
 
     import sys
