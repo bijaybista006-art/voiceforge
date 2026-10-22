@@ -49,6 +49,7 @@ try:
         ne_pace,
         ne_split_for_retry,
         ne_trim_trailing_blip,
+        ne_trim_leading,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -80,6 +81,7 @@ except ImportError:  # pragma: no cover - notebook layout
         ne_pace,
         ne_split_for_retry,
         ne_trim_trailing_blip,
+        ne_trim_leading,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -924,9 +926,11 @@ def _gen_ne(
         if ended and len(audio) / max(1, sr) <= ne_duration_cap(text):
             # A longer fade than elsewhere: this take was ended on a held
             # vowel, and 80 ms lets it fall away the way a voice does.
-            return _fade_out(ne_trim_trailing_blip(audio, sr), sr, 0.08), sr, take + 1
+            # Start on the first word as well: see ne_trim_leading.
+            audio = ne_trim_leading(ne_trim_trailing_blip(audio, sr), sr)
+            return _fade_out(audio, sr, 0.08), sr, take + 1
     _NE_GUARD["failed_takes"] = True
-    return _fade_out(first, sr), sr, 3
+    return _fade_out(ne_trim_leading(first, sr), sr), sr, 3
 
 
 # What the guard had to do for the last piece of text, for the diagnostics.

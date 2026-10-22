@@ -65,9 +65,9 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   defaultLanguage: "en",
   pronunciations: {},
   nepaliPronunciations: {},
-  // The model reads Nepali at 13-17 characters a second, fast enough to blur
-  // words. A little slower by default; pitch is unchanged.
-  nepaliSpeed: 0.92,
+  // The model's own pace. 0.92 was tried and measured (Oct 2026): it made
+  // narration 8% slower than the speaker's own recordings of the same lines.
+  nepaliSpeed: 1,
   // Left to itself the model draws the last word of a sentence out.
   nepaliEnding: 6,
 };

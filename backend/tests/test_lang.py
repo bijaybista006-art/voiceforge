@@ -23,6 +23,7 @@ from backend.voiceforge_lang import (  # noqa: E402
     ne_pace,
     ne_split_for_retry,
     ne_trim_trailing_blip,
+    ne_trim_leading,
     ne_expand_digits,
     ne_prepare,
     ne_spell_number,
@@ -324,6 +325,58 @@ class TestTrailingBlip:
         clip = np.concatenate([self._tone(2.0), self._quiet(0.2), self._tone(0.04, 0.5), self._quiet(0.04)])
         out = ne_trim_trailing_blip(clip, sr)
         assert 2.0 <= len(out) / sr < 2.12
+
+
+class TestLeadingTrim:
+    _tone = staticmethod(TestTrailingBlip._tone)
+    _quiet = staticmethod(TestTrailingBlip._quiet)
+
+    def test_dead_air_before_the_first_word_is_cut(self):
+        import numpy as np
+
+        sr = 24000
+        clip = np.concatenate([self._quiet(1.8), self._tone(2.0)])
+        out = ne_trim_leading(clip, sr)
+        assert 2.0 <= len(out) / sr <= 2.1
+
+    def test_a_blip_then_silence_is_dropped(self):
+        import numpy as np
+
+        sr = 24000
+        # What the cut-off reference produced: 120 ms of sound, a second of
+        # nothing, then the sentence.
+        clip = np.concatenate([self._tone(0.12), self._quiet(1.0), self._tone(2.0)])
+        out = ne_trim_leading(clip, sr)
+        assert 2.0 <= len(out) / sr <= 2.1
+
+    def test_a_short_first_word_before_a_comma_is_kept(self):
+        import numpy as np
+
+        sr = 24000
+        # "आज, ..." — a short word and an ordinary comma pause.
+        clip = np.concatenate([self._tone(0.18), self._quiet(0.35), self._tone(2.0)])
+        assert len(ne_trim_leading(clip, sr)) == len(clip)
+
+    def test_a_real_first_word_before_a_long_pause_is_kept(self):
+        import numpy as np
+
+        sr = 24000
+        clip = np.concatenate([self._tone(0.4), self._quiet(1.0), self._tone(2.0)])
+        assert len(ne_trim_leading(clip, sr)) == len(clip)
+
+    def test_a_clip_that_already_starts_on_speech_is_untouched(self):
+        import numpy as np
+
+        sr = 24000
+        clip = np.concatenate([self._quiet(0.04), self._tone(2.0)])
+        assert len(ne_trim_leading(clip, sr)) == len(clip)
+
+    def test_silence_and_empty_input_are_safe(self):
+        import numpy as np
+
+        sr = 24000
+        assert len(ne_trim_leading(self._quiet(1.0), sr)) == sr
+        assert len(ne_trim_leading(np.zeros(0, dtype=np.float32), sr)) == 0
 
 
 class TestEndingFrames:

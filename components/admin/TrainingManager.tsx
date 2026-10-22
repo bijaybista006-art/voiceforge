@@ -18,6 +18,7 @@ import {
 import { TRAINING_PROMPTS, nextPrompt, type TrainingPrompt } from "@/lib/trainingPrompts";
 import { toast } from "@/lib/toast";
 import type { TrainingSample, TrainingSummary } from "@/lib/types";
+import { buildReference } from "@/lib/voiceReference";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Input";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -29,6 +30,7 @@ import {
   IconMic,
   IconTrash,
   IconUpload,
+  IconWave,
 } from "@/components/ui/Icons";
 
 interface Payload {
@@ -186,6 +188,13 @@ export function TrainingManager() {
         recordedPrompts={new Set(samples.map((s) => s.promptId).filter(Boolean) as string[])}
         disabled={!data.storageReady}
         onSaved={load}
+      />
+
+      <ReferenceCard
+        key={`ref|${language}|${speaker}`}
+        language={language}
+        speaker={speaker ?? ""}
+        samples={samples}
       />
 
       <ClipList
@@ -688,6 +697,124 @@ function AddClipCard({
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// --- voice reference ---------------------------------------------------------
+
+/**
+ * Turn the best clips into the reference a cloned voice is made from.
+ *
+ * A cloned voice copies its style from the first 6 seconds of one reference
+ * clip, and nothing else. These recordings are the cleanest audio of the
+ * speaker there is, so building the reference from them is how they shape
+ * the voice before any training run exists. Clips with level warnings are
+ * left out when there are enough without.
+ */
+function ReferenceCard({
+  language,
+  speaker,
+  samples,
+}: {
+  language: TrainingLanguage;
+  speaker: string;
+  samples: TrainingSample[];
+}) {
+  const langName = language === "ne" ? "Nepali" : "English";
+  const [building, setBuilding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [built, setBuilt] = useState<{ blob: Blob; url: string; used: TrainingSample[]; seconds: number } | null>(null);
+  const [name, setName] = useState(`${speaker || "My voice"} - ${langName} (from training)`);
+
+  useEffect(() => () => (built ? URL.revokeObjectURL(built.url) : undefined), [built]);
+
+  async function build() {
+    setBuilding(true);
+    try {
+      // Oldest first, so the reference stays the same as clips are added.
+      const ordered = [...samples].reverse();
+      const pcm = await Promise.all(
+        ordered.map(async (s) => (await to24k(await decodeAudioBlob(await (await fetch(s.url)).blob()))).samples)
+      );
+      const clean = ordered.map((s, i) => (s.checks?.warnings?.length ? -1 : i)).filter((i) => i >= 0);
+      // The first 6 seconds from clean clips when there are enough; the
+      // rest, which only sets the sound of the voice, from any clip.
+      const r =
+        buildReference(pcm, TRAINING_SAMPLE_RATE, clean) ?? buildReference(pcm, TRAINING_SAMPLE_RATE);
+      if (!r) {
+        toast("Not enough speech yet — record a few more sentences, then try again.", "error");
+        return;
+      }
+      const blob = encodeWavPcm16({ samples: r.samples, sampleRate: TRAINING_SAMPLE_RATE });
+      setBuilt({ blob, url: URL.createObjectURL(blob), used: r.used.map((i) => ordered[i]), seconds: r.durationSec });
+    } catch {
+      toast("Couldn't read the clips.", "error");
+    } finally {
+      setBuilding(false);
+    }
+  }
+
+  async function save() {
+    if (!built) return;
+    setSaving(true);
+    try {
+      const form = new FormData();
+      form.append("audio", built.blob, "reference.wav");
+      form.append("name", name.trim());
+      form.append("language", language);
+      form.append("transcript", built.used.map((s) => s.text).join(" "));
+      const res = await fetch("/api/admin/voices", { method: "POST", body: form });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast(json.error ?? "Couldn't save the voice.", "error");
+        return;
+      }
+      toast(`"${name.trim()}" added to Voices. Pick it in the studio, or use its id in n8n.`, "success");
+      setBuilt(null);
+    } catch {
+      toast("Couldn't reach the server.", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="glass-card overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line bg-surface2 px-5 py-3.5">
+        <div>
+          <h2 className="text-[13px] font-semibold text-ink">Use these recordings as a voice</h2>
+          <p className="mt-0.5 text-[12.5px] text-muted">
+            Builds a clean 10-second reference from your best clips and adds it to Voices. The cloned voice takes its
+            pace and style from it.
+          </p>
+        </div>
+        <Button onClick={() => void build()} disabled={building || saving || samples.length < 2}>
+          <IconWave className="h-4 w-4" /> {building ? "Building…" : built ? "Build again" : "Build reference"}
+        </Button>
+      </div>
+      {built ? (
+        <div className="space-y-3 px-5 py-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <audio src={built.url} controls className="h-9 w-full max-w-sm" />
+            <span className="text-[12.5px] text-muted">
+              {built.seconds.toFixed(1)}s · sentences {built.used.map((s) => s.promptId ?? "free").join(", ")}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              value={name}
+              maxLength={80}
+              onChange={(e) => setName(e.target.value)}
+              aria-label="Voice name"
+              className="h-9 w-72 rounded-lg border border-line bg-white px-3 text-[13px] text-ink outline-none focus:border-brand-500"
+            />
+            <Button variant="primary" onClick={() => void save()} disabled={saving || !name.trim()}>
+              <IconCheck className="h-4 w-4" /> {saving ? "Saving…" : "Save as voice"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

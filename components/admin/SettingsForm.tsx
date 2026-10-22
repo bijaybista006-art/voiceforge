@@ -175,13 +175,13 @@ export function SettingsForm({
             min={0.75}
             max={1.1}
             step={0.01}
-            value={values.nepaliSpeed ?? 0.92}
+            value={values.nepaliSpeed ?? 1}
             onChange={(e) => patch({ nepaliSpeed: Number(e.target.value) })}
             className="w-44"
             aria-label="Nepali speed"
           />
           <span className="font-mono text-[13px] tabular-nums text-ink">
-            {Math.round((values.nepaliSpeed ?? 0.92) * 100)}%
+            {Math.round((values.nepaliSpeed ?? 1) * 100)}%
           </span>
           <span className="text-[12px] text-faint">100% is the model&apos;s own pace</span>
         </div>

@@ -5,6 +5,7 @@ import { decodeAudioBlob, encodeWavPcm16, formatDuration } from "@/lib/audio";
 import { LANGUAGES, SAMPLE_IDEAL_MAX_SEC, SAMPLE_IDEAL_MIN_SEC } from "@/lib/config";
 import { toast } from "@/lib/toast";
 import type { LibraryVoiceView, VoiceRefSlot } from "@/lib/types";
+import { checkReference, speechBounds } from "@/lib/voiceReference";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -177,7 +178,13 @@ export function VoicesManager() {
 
 function AddVoiceCard({ disabled, onAdded }: { disabled: boolean; onAdded: () => void }) {
   const fileInput = useRef<HTMLInputElement>(null);
-  const [wav, setWav] = useState<{ blob: Blob; durationSec: number; fileName: string } | null>(null);
+  const [wav, setWav] = useState<{
+    blob: Blob;
+    durationSec: number;
+    fileName: string;
+    trimmedSec: number;
+    warnings: string[];
+  } | null>(null);
   const [name, setName] = useState("");
   const [language, setLanguage] = useState("en");
   const [transcript, setTranscript] = useState("");
@@ -203,9 +210,20 @@ function AddVoiceCard({ disabled, onAdded }: { disabled: boolean; onAdded: () =>
   async function onPick(file: File) {
     setPreparing(true);
     try {
-      const pcm = await decodeAudioBlob(file);
+      const decoded = await decodeAudioBlob(file);
+      // Silence before the first word is copied into every generated clip,
+      // so it is cut here; see lib/voiceReference.ts.
+      const lead = speechBounds(decoded.samples, decoded.sampleRate)?.start ?? 0;
+      const cut = lead > 0.1 ? Math.floor((lead - 0.05) * decoded.sampleRate) : 0;
+      const pcm = { samples: decoded.samples.slice(cut), sampleRate: decoded.sampleRate };
       const durationSec = pcm.samples.length / pcm.sampleRate;
-      setWav({ blob: encodeWavPcm16(pcm), durationSec, fileName: file.name });
+      setWav({
+        blob: encodeWavPcm16(pcm),
+        durationSec,
+        fileName: file.name,
+        trimmedSec: cut / decoded.sampleRate,
+        warnings: checkReference(pcm.samples, pcm.sampleRate).warnings,
+      });
       if (!name) setName(file.name.replace(/\.[^.]+$/, "").slice(0, 60));
     } catch {
       toast("Couldn't read that audio file. Try a WAV, MP3 or M4A.", "error");
@@ -300,6 +318,17 @@ function AddVoiceCard({ disabled, onAdded }: { disabled: boolean; onAdded: () =>
               That clip is under 4 seconds — too short to clone reliably.
             </p>
           ) : null}
+          {wav && wav.trimmedSec > 0 ? (
+            <p className="mt-2 text-[12px] text-muted">
+              Cut {wav.trimmedSec.toFixed(1)}s of silence from the start, so generated speech starts on time.
+            </p>
+          ) : null}
+          {wav?.warnings.map((w) => (
+            <p key={w} className="mt-2 flex gap-2 text-[12px] text-live">
+              <IconAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {w}
+            </p>
+          ))}
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">

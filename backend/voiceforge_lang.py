@@ -345,6 +345,63 @@ def ne_trim_trailing_blip(audio, sr: int, gap: float = 0.12, window: float = 0.8
     return audio
 
 
+def ne_trim_leading(
+    audio,
+    sr: int,
+    keep: float = 0.06,
+    blip: float = 0.2,
+    gap: float = 0.6,
+    window: float = 2.5,
+):
+    """Start a take at its first word.
+
+    Measured (Oct 2026) with a reference clip whose first six seconds ended
+    mid-word: every take began by finishing that word — a 60–200 ms blip —
+    then up to 1.8 s of silence before the text. Strung together, the blip
+    lands right after the previous sentence and is heard as an extra "aa".
+    A clean reference fixes the cause; this keeps any other voice from
+    putting dead air or a blip at the start of a clip.
+
+    Two cuts, both inside the first `window` seconds: silence before the
+    first sound is cut to `keep`; and a first sound no longer than `blip`
+    followed by at least `gap` of quiet is dropped. A real first word is
+    longer than 200 ms or is not followed by most of a second of silence,
+    so it is never taken for a blip.
+    """
+    if _np is None or audio is None or len(audio) == 0:
+        return audio
+    audio = _np.asarray(audio, dtype=_np.float32)
+    rms, n = _frame_rms(audio, sr)  # 20 ms frames
+    if len(rms) < 4 or float(rms.max()) <= 0:
+        return audio
+    sound = rms >= float(rms.max()) * 10 ** (-30 / 20)
+    if not bool(sound.any()):
+        return audio
+    limit = min(len(rms), int(window * sr / n))
+    start = int(_np.argmax(sound))
+    # Drop leading blips: a short sound, then a long quiet, then more sound.
+    while start < limit:
+        end = start
+        while end + 1 < len(sound) and sound[end + 1]:
+            end += 1
+        after = end + 1
+        while after < len(sound) and not sound[after]:
+            after += 1
+        if after >= len(sound):
+            break  # nothing follows: this is the only sound, keep it
+        if (end - start + 1) * n > blip * sr or (after - end - 1) * n < gap * sr:
+            break
+        start = after
+    cut = max(0, start * n - int(keep * sr))
+    if cut <= 0:
+        return audio
+    out = audio[cut:].copy()
+    fade = min(len(out), int(0.01 * sr))
+    if fade > 1:
+        out[:fade] *= _np.linspace(0.0, 1.0, fade, dtype=_np.float32)
+    return out
+
+
 def ne_prepare(text: str, max_chars: int = 240) -> List[str]:
     """Spoken numbers, sentence and breath chunking, then no orphan fragments."""
     return ne_merge_short(ne_chunks(ne_expand_digits(text or ""), max_chars))
