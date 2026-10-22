@@ -248,6 +248,13 @@ export function backendSecret(): string | undefined {
   return process.env.BACKEND_SECRET;
 }
 
+/** A machine caller (a GPU backend or a training job) proving it holds BACKEND_SECRET. */
+export async function isValidBackendSecret(header: string | null): Promise<boolean> {
+  const expected = backendSecret();
+  if (!expected || !header) return false;
+  return constantTimeEquals(header, expected);
+}
+
 /** Every gateway -> backend call carries this. */
 export function backendHeaders(): Record<string, string> {
   const secret = backendSecret();
