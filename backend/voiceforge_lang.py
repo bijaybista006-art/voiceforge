@@ -345,6 +345,22 @@ def ne_trim_trailing_blip(audio, sr: int, gap: float = 0.12, window: float = 0.8
     return audio
 
 
+def ne_model_ending(text: str) -> str:
+    """End the text the way the Nepali model reads one ending, not two.
+
+    chatterbox's generate() runs punc_norm, which appends "." to any text
+    that does not end in one of its own marks — and "।" is not one. So
+    "…गर्नुहोस्।" reached the model as "…गर्नुहोस्।." (one extra text token,
+    seen in the diagnostics). Measured on the same four sentences, same seed,
+    same GPU (Oct 2026): with a final "." instead, all four takes stopped at
+    the full stop (two of four did with "।"), the four ran 15.3 s instead of
+    17.0 s — close to the speaker's own reading — and Whisper no longer heard
+    a stray "आँ" before them. A "।" inside the text made no clear difference,
+    so only the last one changes. "?" and "!" are library marks already.
+    """
+    return re.sub(r"\s*[।॥]+\s*$", ".", text or "")
+
+
 def ne_trim_leading(
     audio,
     sr: int,

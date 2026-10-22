@@ -50,6 +50,7 @@ try:
         ne_split_for_retry,
         ne_trim_trailing_blip,
         ne_trim_leading,
+        ne_model_ending,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -82,6 +83,7 @@ except ImportError:  # pragma: no cover - notebook layout
         ne_split_for_retry,
         ne_trim_trailing_blip,
         ne_trim_leading,
+        ne_model_ending,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -715,6 +717,8 @@ def _generate_chunk(
         model = "chatterbox-ne"
         # The tag the checkpoint was trained with — see NE_LANGUAGE_ID.
         language = _NE_TAG["id"]
+        # One sentence ending, not two: see ne_model_ending.
+        text = ne_model_ending(text)
 
     if model in ("chatterbox", "chatterbox-ne"):
         import inspect

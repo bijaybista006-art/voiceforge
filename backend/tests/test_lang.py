@@ -24,6 +24,7 @@ from backend.voiceforge_lang import (  # noqa: E402
     ne_split_for_retry,
     ne_trim_trailing_blip,
     ne_trim_leading,
+    ne_model_ending,
     ne_expand_digits,
     ne_prepare,
     ne_spell_number,
@@ -325,6 +326,21 @@ class TestTrailingBlip:
         clip = np.concatenate([self._tone(2.0), self._quiet(0.2), self._tone(0.04, 0.5), self._quiet(0.04)])
         out = ne_trim_trailing_blip(clip, sr)
         assert 2.0 <= len(out) / sr < 2.12
+
+
+class TestModelEnding:
+    def test_a_final_danda_becomes_one_full_stop(self):
+        assert ne_model_ending("जाँच गर्नुहोस्।") == "जाँच गर्नुहोस्."
+        assert ne_model_ending("सक्छ ॥ ") == "सक्छ."
+
+    def test_dandas_inside_the_text_stay(self):
+        assert ne_model_ending("स्वागत छ। आज कुरा गर्नेछौं।") == "स्वागत छ। आज कुरा गर्नेछौं."
+
+    def test_other_endings_are_untouched(self):
+        assert ne_model_ending("के यो सत्य हो?") == "के यो सत्य हो?"
+        assert ne_model_ending("ध्यान दिनुहोस्!") == "ध्यान दिनुहोस्!"
+        assert ne_model_ending("बिना चिन्ह") == "बिना चिन्ह"
+        assert ne_model_ending("") == ""
 
 
 class TestLeadingTrim:
