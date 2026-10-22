@@ -6,7 +6,7 @@ import {
   checkTranscript,
   trimToSpeech,
 } from "../trainingChecks";
-import { TRAINING_PROMPTS, nextPrompt } from "../trainingPrompts";
+import { TRAINING_PROMPTS, nextPrompt, recordingOrder } from "../trainingPrompts";
 
 const SR = 24000;
 
@@ -114,10 +114,30 @@ describe("training prompts", () => {
     expect(TRAINING_PROMPTS.ne[0].id).toBe("ne-001");
   });
 
-  it("moves on to the next sentence not yet recorded", () => {
-    const recorded = new Set(["ne-001", "ne-002"]);
+  it("serves the voice-reference and important-word sentences first", () => {
+    const first = nextPrompt("ne", new Set());
+    expect(first?.id).toBe("ne-488");
+    expect(first?.note).toMatch(/^Voice reference/);
+    const order = recordingOrder("ne").map((p) => p.id);
+    expect(order.slice(0, 11)).toEqual([
+      "ne-488", "ne-489", "ne-490", "ne-491", "ne-492", "ne-493", "ne-494", "ne-495",
+      "ne-028", "ne-079", "ne-082",
+    ]);
+    expect(order[11]).toBe("ne-496");
+    expect(new Set(order).size).toBe(TRAINING_PROMPTS.ne.length);
+  });
+
+  it("then moves through the rest in order, skipping what is recorded", () => {
+    const priority = recordingOrder("ne").filter((p) => /^(Voice reference|Important words)/.test(p.note ?? "") || ["ne-028", "ne-079", "ne-082"].includes(p.id));
+    const recorded = new Set([...priority.map((p) => p.id), "ne-001", "ne-002"]);
     expect(nextPrompt("ne", recorded)?.id).toBe("ne-003");
     expect(nextPrompt("ne", recorded, "ne-003")?.id).toBe("ne-004");
+  });
+
+  it("gives every sentence a reading note, and keeps the old ids", () => {
+    expect(TRAINING_PROMPTS.ne.every((p) => p.note)).toBe(true);
+    expect(TRAINING_PROMPTS.ne.find((p) => p.id === "ne-028")?.text).toBe("धन्यवाद, अर्को भिडियोमा भेटौंला।");
+    expect(TRAINING_PROMPTS.ne.find((p) => p.id === "ne-079")?.text).toBe("अर्को भिडियोमा फेरि भेटौंला, नमस्ते।");
   });
 
   it("returns nothing once every sentence is recorded", () => {

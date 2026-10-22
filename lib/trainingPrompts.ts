@@ -21,9 +21,12 @@ import type { TrainingLanguage } from "./trainingChecks";
 export interface TrainingPrompt {
   id: string;
   text: string;
+  /** How to read it: shown above the sentence and pre-filled as the clip's description. */
+  note?: string;
 }
 
 const NE = [
+  "@Channel narration: natural and clear, at your normal pace.",
   "नमस्ते साथीहरू, आजको भिडियोमा स्वागत छ।",
   "आज हामी अनलाइन सुरक्षाको बारेमा कुरा गर्नेछौं।",
   "आफ्नो पासवर्ड कसैलाई पनि नभन्नुहोस्।",
@@ -110,6 +113,7 @@ const NE = [
   // one to its natural end and stop. Short sentences are paired, so every
   // clip passes the 3-second minimum and teaches the pause after "।" too.
   // Greetings and channel lines first.
+  "@Greeting: warm and friendly, smile as you speak, and say the last word fully.",
   "नमस्ते, म बिजय, आईटी गेटवेमा तपाईंलाई स्वागत छ।",
   "नमस्कार साथीहरू, आज फेरि एउटा नयाँ विषय लिएर आएको छु।",
   "नमस्ते, आशा छ तपाईं सबै सन्चै हुनुहुन्छ।",
@@ -130,6 +134,7 @@ const NE = [
   "फेरि भेटौंला, तबसम्म सुरक्षित रहनुहोस्।",
 
   // Cyber security, in the words the channel uses.
+  "@Security tip: serious and clear, steady pace, a full stop at the ।.",
   "साइबर अपराधीहरू हरेक दिन नयाँ तरिका खोजिरहेका हुन्छन्।",
   "फिसिङ भनेको नक्कली इमेल वा म्यासेजबाट गरिने ठगी हो।",
   "नक्कली वेबसाइट हुबहु बैंकको वेबसाइट जस्तै देखिन सक्छ।",
@@ -181,6 +186,7 @@ const NE = [
   "सुरक्षा भनेको एकपटकको काम होइन, निरन्तरको अभ्यास हो।",
 
   // Technology and how-to, step by step.
+  "@Instruction: calm and clear, one step at a time.",
   "सबैभन्दा पहिले कम्प्युटर रिस्टार्ट गरेर हेर्नुहोस्।",
   "धेरैजसो समस्या रिस्टार्ट गर्दैमा समाधान हुन्छ।",
   "विन्डोज अपडेट रोक्नुको सट्टा समयमै गर्नुहोस्।",
@@ -228,6 +234,7 @@ const NE = [
   "प्रमाणपत्र उपयोगी हुन्छ, तर व्यवहारिक अनुभव झनै महत्त्वपूर्ण हुन्छ।",
 
   // Narration: history, places and mysteries, as in the long videos.
+  "@Storytelling: a little slower and expressive, pause briefly at commas.",
   "सगरमाथा संसारकै सबैभन्दा अग्लो हिमाल हो।",
   "यसको उचाइ आठ हजार आठ सय अठचालीस मिटर छ।",
   "सन् उन्नाइस सय त्रिपन्नमा पहिलो पटक सगरमाथाको चुचुरोमा मानिस पुगे।",
@@ -258,6 +265,7 @@ const NE = [
   "हाम्रो विविधता नै हाम्रो सबैभन्दा ठूलो शक्ति हो।",
 
   // Everyday Nepali: ordinary speech and rhythm.
+  "@Everyday talk: relaxed and natural, as if speaking to a friend.",
   "आज बिहान म छिटै उठें। चिया पिउँदै बिहानको समाचार हेरें।",
   "बजारमा आज तरकारी निकै महँगो थियो। आमाले बनाएको दाल भातको स्वाद नै बेग्लै हुन्छ।",
   "हिउँदमा तातो पानीले नुहाउँदा आनन्द आउँछ।",
@@ -285,6 +293,7 @@ const NE = [
   "हामी सबै मिलेर अघि बढ्नुपर्छ, तब मात्र देश बन्छ।",
 
   // Numbers, dates and quantities, written as said.
+  "@Numbers: say each one clearly, as words.",
   "आज दुई हजार बयासी साल कात्तिक पाँच गते हो।",
   "यो काम सम्पन्न गर्न करिब तीन घण्टा लाग्छ।",
   "हामीसँग जम्मा पच्चीस जना कर्मचारी छन्।",
@@ -303,6 +312,7 @@ const NE = [
   "यो पुल सय वर्षभन्दा पुरानो हो, तर अझै बलियो छ।",
 
   // Questions, with their rising end.
+  "@Question: let your voice rise at the end.",
   "तपाईंको इन्टरनेट पनि ढिलो चल्छ? के तपाईंलाई यो कुरा पहिले थाहा थियो?",
   "यो म्यासेज कसले पठायो होला? तपाईं कुन ब्राउजर प्रयोग गर्नुहुन्छ?",
   "तपाईंको फोनमा कति वटा एप छन्? अन्तिम पटक ब्याकअप कहिले लिनुभएको थियो?",
@@ -316,6 +326,7 @@ const NE = [
   "अब के गर्ने, थाहा छ? आउनुहोस्, सँगै सिकौं।",
 
   // Longer sentences with commas: read the pause at each comma.
+  "@Long sentence: a short pause at each comma, finish fully at the ।.",
   "पहिले सेटिङ्स खोल्नुहोस्, त्यसपछि सुरक्षा छान्नुहोस्, र अन्त्यमा सेभ गर्नुहोस्।",
   "यदि कोही अपरिचितले फोन गरेर तपाईंको विवरण माग्छ भने, नम्र भएर फोन राखिदिनुहोस्।",
   "बिहान उठ्ने, व्यायाम गर्ने र समयमा खाना खाने बानीले जीवन सन्तुलित बनाउँछ।",
@@ -333,6 +344,7 @@ const NE = [
   "अब तपाईंको खाता पहिलेभन्दा धेरै सुरक्षित भयो, बधाई छ।",
 
   // Hard sounds: ङ ञ ण क्ष त्र ज्ञ ऋ, nasal vowels and conjuncts.
+  "@Hard sounds: pronounce every conjunct clearly (क्ष, त्र, ज्ञ, ङ, ञ).",
   "ज्ञान बाँड्दा घट्दैन, झन् बढ्छ। क्षेत्रीय विकासका लागि शिक्षा र स्वास्थ्यमा लगानी चाहिन्छ।",
   "त्रिभुवन विश्वविद्यालय नेपालको सबैभन्दा पुरानो विश्वविद्यालय हो।",
   "ऋतु परिवर्तनसँगै मौसम पनि बदलिन्छ। कृषि नेपाली अर्थतन्त्रको मेरुदण्ड हो।",
@@ -354,6 +366,7 @@ const NE = [
   "श्रीमान् र श्रीमती दुवै शिक्षक हुनुहुन्छ।",
 
   // Endings the model gets wrong: verbs that close a sentence.
+  "@Sentence ending: say the last word fully, then stop cleanly.",
   "यो काम आज नै सकिन्छ। हामी भोलि बिहान निस्कन्छौं।",
   "उहाँ अहिले अफिसमा हुनुहुन्छ। मलाई यो कुरा मन पर्यो।",
   "तपाईंले राम्रो गर्नुभयो। यो बाटो सिधै बजारसम्म जान्छ।",
@@ -366,6 +379,7 @@ const NE = [
   "हामी अवश्य जित्नेछौं। यति भन्दै उनी अघि हिँडे।",
 
   // More channel narration in the speaker's own voice.
+  "@Channel voice: confident and clear, at your normal pace.",
   "आज म तपाईंलाई आफ्नो फोन सुरक्षित राख्ने पाँच तरिका बताउँछु।",
   "पहिलो तरिका एकदमै सजिलो छ, तर धेरैले बेवास्ता गर्छन्।",
   "दोस्रो तरिकाले तपाईंको डाटा चोरी हुनबाट जोगाउँछ।",
@@ -385,6 +399,7 @@ const NE = [
   "सुरक्षित इन्टरनेट, सुरक्षित भविष्य, यही हाम्रो सन्देश हो।",
 
   // More security and technology, each long enough to record alone.
+  "@Security tip: serious and clear, steady pace.",
   "पासवर्ड बदल्दा पुरानो पासवर्डसँग मिल्दोजुल्दो नबनाउनुहोस्।",
   "आफ्नो इमेल कुनै डाटा चुहावटमा परेको छ कि छैन, जाँच गर्न सकिन्छ।",
   "डाटा चुहावट भएको थाहा पाएमा तुरुन्तै पासवर्ड परिवर्तन गर्नुहोस्।",
@@ -437,6 +452,7 @@ const NE = [
   "प्रविधिको सही प्रयोगले जीवन सजिलो बनाउँछ, गलत प्रयोगले जोखिम बढाउँछ।",
 
   // Narration, places and stories.
+  "@Storytelling: a little slower and expressive.",
   "हिमालको फेदमा बसेका गाउँहरूमा जाडो याममा जीवन झनै कठिन हुन्छ।",
   "शेर्पा समुदायको साहस र मिहिनेतबिना धेरै हिमाल आरोहण सम्भव हुँदैनथ्यो।",
   "अन्नपूर्ण क्षेत्रको पदमार्ग संसारभरिका पर्यटकको रोजाइमा पर्छ।",
@@ -469,6 +485,7 @@ const NE = [
   "तपाईं आफैं सोच्नुहोस्, साँच्चै के भएको थियो होला।",
 
   // Everyday life, work and family.
+  "@Everyday talk: relaxed and natural.",
   "बिहान सबेरै उठेर एक गिलास तातो पानी पिउने बानी राम्रो हो।",
   "अफिस जानुअघि आजका कामहरूको सूची बनाउँदा समय बच्छ।",
   "दिउँसोको खाना खाएपछि अलिकति हिँड्दा शरीर हलुका हुन्छ।",
@@ -501,6 +518,7 @@ const NE = [
   "समयमै कर तिर्नु हरेक नागरिकको कर्तव्य हो।",
 
   // Questions and answers, read as a pair.
+  "@Question and answer: rise at the question, settle at the answer.",
   "के तपाईंले आज आफ्नो इमेल जाँच गर्नुभयो? नगर्नुभएको भए अहिले नै हेर्नुहोस्।",
   "यो सन्देश कसले पठायो? पठाउने व्यक्तिलाई चिन्नुहुन्छ भने मात्र खोल्नुहोस्।",
   "तपाईंको पासवर्ड कति पुरानो छ? एक वर्षभन्दा पुरानो भए बदल्नुहोस्।",
@@ -518,6 +536,7 @@ const NE = [
   "तपाईं कहाँ हुनुहुन्छ? म बाटोमा छु, दस मिनेटमा आइपुग्छु।",
 
   // Sentence endings in longer lines.
+  "@Long sentence: steady to the end, no rush on the last word.",
   "यदि तपाईंलाई यो जानकारी काम लाग्यो भने अरूसँग पनि बाँड्नुहोस्।",
   "हामीले यो काम सुरु गरेको धेरै भयो, तर अझै धेरै गर्न बाँकी छ।",
   "उनले मलाई सम्झाए, र म पुरानो दिन सम्झेर मुस्कुराएँ।",
@@ -535,6 +554,7 @@ const NE = [
   "अन्त्यमा, सबैलाई मेरो तर्फबाट हार्दिक धन्यवाद।",
 
   // Channel lines in different moods: calm, serious, excited.
+  "@Channel line: match the mood of the sentence, calm, serious or excited.",
   "यो भिडियो धेरैका लागि आँखा खोल्ने खालको हुनेछ।",
   "शान्त भएर सुन्नुहोस्, यो जानकारी तपाईंको पैसा बचाउन सक्छ।",
   "यो कुरा निकै गम्भीर छ, हल्का रूपमा नलिनुहोस्।",
@@ -550,6 +570,37 @@ const NE = [
   "नेपाली भाषामा प्रविधिको जानकारी दिनु हाम्रो मुख्य उद्देश्य हो।",
   "प्रविधि सबैका लागि हो, यसलाई सजिलो भाषामा बुझाउनु हाम्रो काम हो।",
   "अर्को हप्ता यही समयमा नयाँ भिडियो आउनेछ, पर्खनुहोला।",
+
+  // ---- Voice reference sentences (ne-488 on), recorded first. ----
+  // Each ends on a soft vowel. A cloned voice continues from the end of its
+  // reference sample, and samples ending in "छ" or "स्" made takes open with a
+  // stray "खाया" or a "क-" sound (measured Oct 2026); these give a bright
+  // reference that ends cleanly.
+  "@Voice reference: calm and natural, your everyday voice. Let the last vowel fade, then stop.",
+  "आजको भिडियो यहीँसम्म, अर्को भिडियोमा फेरि भेटौंला।",
+  "यो जानकारी तपाईंलाई पक्कै उपयोगी होला।",
+  "आउनुहोस्, आज केही नयाँ कुरा सँगै सिकौं।",
+  "सुरु गर्नुअघि एकपटक यो कुरा राम्ररी बुझौं।",
+  "आज हामी सजिलो भाषामा यो विषय सँगै हेरौं।",
+  "यो तरिका सबैका लागि निकै सजिलो छ भन्ने लाग्छ मलाई।",
+  "भेटौंला अर्को हप्ता, आफ्नो ख्याल राख्नुहोला।",
+  "नमस्ते, म बिजय, आजको विषय तपाईंलाई पक्कै मन पर्ला।",
+
+  // ---- Words to get right (ne-496 on), recorded next. ----
+  // The words the model has said wrong, each in more than one context.
+  "@Important words: say each word clearly and fully, especially नमस्ते, साथीहरू, स्वागत, प्रमाणीकरण and अपरिचित.",
+  "नमस्ते साथीहरू, फेरि एकपटक तपाईं सबैलाई नमस्ते।",
+  "हाम्रो च्यानलमा तपाईं सबैलाई हार्दिक स्वागत छ, साथीहरू।",
+  "दुई चरणको प्रमाणीकरण अन गर्दा तपाईंको खाता सुरक्षित हुन्छ।",
+  "प्रमाणीकरणको कोड र पासवर्ड कसैलाई पनि नभन्नुहोस्।",
+  "अपरिचित व्यक्ति, अपरिचित नम्बर र अपरिचित लिङ्कबाट सधैं टाढा रहनुहोस्।",
+  "मोबाइलमा आएको हरेक म्यासेज ध्यान दिएर पढ्नुहोस्।",
+  "सेटिङ्स खोल्नुहोस्, सुरक्षा छान्नुहोस्, र परिवर्तन सेभ गर्नुहोस्।",
+  "भिडियो मन परे लाइक गर्नुहोस्, सेयर गर्नुहोस् र सब्सक्राइब गर्नुहोस्।",
+  "आफ्नो पासवर्ड बलियो बनाउनुहोस् र नियमित रूपमा परिवर्तन गर्नुहोस्।",
+  "ह्वाट्सएप, फेसबुक र टिकटकमा आउने अनौठा लिङ्कमा क्लिक नगर्नुहोस्।",
+  "आर्टिफिसियल इन्टेलिजेन्स र साइबर सुरक्षा हाम्रो च्यानलका मुख्य विषय हुन्।",
+  "शंका लागेमा नेपाल प्रहरीको साइबर ब्युरोमा उजुरी दिनुहोस्, नडराउनुहोस्।",
 ];
 
 const EN = [
@@ -614,8 +665,22 @@ const EN = [
   "That's it for today. Stay safe online.",
 ];
 
+/**
+ * Number the sentences. An entry starting with "@" is the reading note for the
+ * sentences after it, not a sentence, so it takes no id: ids stay exactly as
+ * they were before notes existed.
+ */
 function numbered(lang: string, list: string[]): TrainingPrompt[] {
-  return list.map((text, i) => ({ id: `${lang}-${String(i + 1).padStart(3, "0")}`, text }));
+  const out: TrainingPrompt[] = [];
+  let note: string | undefined;
+  for (const entry of list) {
+    if (entry.startsWith("@")) {
+      note = entry.slice(1);
+      continue;
+    }
+    out.push({ id: `${lang}-${String(out.length + 1).padStart(3, "0")}`, text: entry, ...(note ? { note } : {}) });
+  }
+  return out;
 }
 
 export const TRAINING_PROMPTS: Record<TrainingLanguage, TrainingPrompt[]> = {
@@ -623,13 +688,37 @@ export const TRAINING_PROMPTS: Record<TrainingLanguage, TrainingPrompt[]> = {
   en: numbered("en", EN),
 };
 
-/** The first prompt not yet recorded, starting after `after` when given. */
+/**
+ * Recorded first: the voice-reference sentences (soft endings, for building a
+ * clean bright voice; see that group's comment), the older sentences that end
+ * the same way, then the important words. Everything else follows in order.
+ */
+const PRIORITY: Record<TrainingLanguage, string[]> = {
+  ne: [
+    ...TRAINING_PROMPTS.ne.filter((p) => p.note?.startsWith("Voice reference")).map((p) => p.id),
+    "ne-028",
+    "ne-079",
+    "ne-082",
+    ...TRAINING_PROMPTS.ne.filter((p) => p.note?.startsWith("Important words")).map((p) => p.id),
+  ],
+  en: [],
+};
+
+/** The sentences in recording order: the priority ones, then the rest by id. */
+export function recordingOrder(language: TrainingLanguage): TrainingPrompt[] {
+  const all = TRAINING_PROMPTS[language];
+  const first = PRIORITY[language].map((id) => all.find((p) => p.id === id)).filter(Boolean) as TrainingPrompt[];
+  const firstIds = new Set(first.map((p) => p.id));
+  return [...first, ...all.filter((p) => !firstIds.has(p.id))];
+}
+
+/** The first prompt not yet recorded, in recording order, starting after `after` when given. */
 export function nextPrompt(
   language: TrainingLanguage,
   recorded: Set<string>,
   after?: string
 ): TrainingPrompt | null {
-  const list = TRAINING_PROMPTS[language];
+  const list = recordingOrder(language);
   const start = after ? list.findIndex((p) => p.id === after) + 1 : 0;
   for (let k = 0; k < list.length; k++) {
     const p = list[(start + k) % list.length];

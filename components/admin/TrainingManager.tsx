@@ -365,8 +365,9 @@ function AddClipCard({
     nextPrompt(language, recordedPrompts)
   );
   const [text, setText] = useState(prompt?.text ?? "");
-  // Kept between clips: the room, mic and tone rarely change mid-session.
-  const [description, setDescription] = useState("");
+  // Starts as the sentence's reading note, so a clip can be saved straight
+  // away; anything the speaker types instead is kept between clips.
+  const [description, setDescription] = useState(prompt?.note ?? "");
   const [capture, setCapture] = useState<Capture | null>(null);
   const [recording, setRecording] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -463,6 +464,9 @@ function AddClipCard({
   }
 
   function goTo(p: TrainingPrompt | null) {
+    // Follow the reading note from sentence to sentence, unless the speaker
+    // has written a description of their own.
+    setDescription((d) => (!d.trim() || d === prompt?.note ? p?.note ?? "" : d));
     setPrompt(p);
     setText(p?.text ?? "");
     setCapture(null);
@@ -573,6 +577,12 @@ function AddClipCard({
               >
                 {prompt.text}
               </p>
+              {prompt.note ? (
+                <p className="mt-1.5 text-[12.5px] text-muted">
+                  <span className="font-medium text-ink">How to read: </span>
+                  {prompt.note}
+                </p>
+              ) : null}
             </div>
           ) : (
             <p className="rounded-xl border border-line bg-white px-4 py-4 text-[13px] text-muted">
@@ -683,7 +693,7 @@ function AddClipCard({
               onChange={(e) => setDescription(e.target.value)}
             />
             <p className="mt-1 text-[11.5px] text-faint">
-              Tone, room, mic. Kept with the clip for you; never read as speech. Stays filled for the next clip.
+              Filled in with how to read the sentence; change it if you like. Kept with the clip, never read as speech.
             </p>
           </div>
         </div>
