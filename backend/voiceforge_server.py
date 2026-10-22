@@ -410,7 +410,15 @@ def _encode(audio: np.ndarray, sr: int, fmt: str = "wav") -> tuple[bytes, str]:
     buf = io.BytesIO()
     if fmt == "mp3":
         try:
-            sf.write(buf, audio, sr, format="MP3")
+            # Highest quality. libsndfile's default came out ~64 kbit/s VBR,
+            # measured (Oct 2026) taking a further 3–7 dB off 4–10 kHz — the
+            # band that makes a voice sound clear rather than nasal. At 24 kHz
+            # this is MPEG-2 at its 160 kbit/s ceiling.
+            try:
+                sf.write(buf, audio, sr, format="MP3", bitrate_mode="CONSTANT", compression_level=0.0)
+            except TypeError:  # soundfile < 0.12 has no quality settings
+                buf = io.BytesIO()
+                sf.write(buf, audio, sr, format="MP3")
             return buf.getvalue(), "mp3"
         except Exception:
             buf = io.BytesIO()
