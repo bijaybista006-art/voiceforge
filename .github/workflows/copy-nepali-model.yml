@@ -11,6 +11,10 @@ on:
         description: "Your Hugging Face model repo"
         required: true
         default: "waytobijay/voiceforge-nepali"
+      src_file:
+        description: "File to copy from Firoj112/chatterbox-nepali-runs"
+        required: true
+        default: "t3_mtl_nepali_merged.safetensors"
 
 jobs:
   copy:
@@ -30,4 +34,4 @@ jobs:
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-        run: modal run modal/copy_nepali_model.py --dst-repo "${{ inputs.dst_repo }}"
+        run: modal run modal/copy_nepali_model.py --dst-repo "${{ inputs.dst_repo }}" --src-file "${{ inputs.src_file }}"
