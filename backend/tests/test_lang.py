@@ -25,6 +25,7 @@ from backend.voiceforge_lang import (  # noqa: E402
     ne_trim_trailing_blip,
     ne_trim_leading,
     ne_model_ending,
+    ne_take_problem,
     ne_expand_digits,
     ne_prepare,
     ne_spell_number,
@@ -326,6 +327,45 @@ class TestTrailingBlip:
         clip = np.concatenate([self._tone(2.0), self._quiet(0.2), self._tone(0.04, 0.5), self._quiet(0.04)])
         out = ne_trim_trailing_blip(clip, sr)
         assert 2.0 <= len(out) / sr < 2.12
+
+
+class TestTakeProblem:
+    _tone = staticmethod(TestTrailingBlip._tone)
+    _quiet = staticmethod(TestTrailingBlip._quiet)
+    ONE = "मोबाइलमा दुई चरणको प्रमाणीकरण अन गर्नुहोस्."  # 43 characters
+    TWO = "नमस्ते साथीहरू, आजको भिडियोमा स्वागत छ। आज हामी अनलाइन सुरक्षाको बारेमा कुरा गर्नेछौं."
+
+    def test_a_whole_take_passes(self):
+        import numpy as np
+
+        # 3.4 s for 43 characters, a 0.3 s comma pause: like the speaker.
+        clip = np.concatenate([self._tone(1.6), self._quiet(0.3), self._tone(1.5)])
+        assert ne_take_problem(clip, 24000, self.ONE) == ""
+
+    def test_a_take_that_lost_its_place_is_caught(self):
+        import numpy as np
+
+        # The Colab take: speech, 1.6 s of silence mid-sentence, more speech.
+        clip = np.concatenate([self._tone(3.0), self._quiet(1.6), self._tone(2.2)])
+        assert "gap" in ne_take_problem(clip, 24000, self.ONE) or "slow" in ne_take_problem(clip, 24000, self.ONE)
+
+    def test_a_take_far_too_slow_for_its_text_is_caught(self):
+        assert "slow" in ne_take_problem(self._tone(7.0), 24000, self.ONE)
+
+    def test_a_long_gap_inside_one_sentence_is_caught(self):
+        import numpy as np
+
+        clip = np.concatenate([self._tone(1.5), self._quiet(0.9), self._tone(1.5)])
+        assert "gap" in ne_take_problem(clip, 24000, self.ONE)
+
+    def test_a_sentence_break_may_pause_longer(self):
+        import numpy as np
+
+        clip = np.concatenate([self._tone(3.0), self._quiet(0.7), self._tone(3.2)])
+        assert ne_take_problem(clip, 24000, self.TWO) == ""
+
+    def test_short_texts_are_not_judged_on_pace(self):
+        assert ne_take_problem(self._tone(3.0), 24000, "नमस्ते।") == ""
 
 
 class TestModelEnding:

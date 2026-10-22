@@ -345,6 +345,50 @@ def ne_trim_trailing_blip(audio, sr: int, gap: float = 0.12, window: float = 0.8
     return audio
 
 
+# A take that lost its place in the text. Measured (Oct 2026) on 50 Nepali
+# takes against the speaker's own recordings of the same sentences: speech
+# runs 0.067–0.099 s per character in good takes (0.071–0.080 in the
+# speaker's own), and the longest pause inside one sentence is at most
+# 0.44 s (0.64 s across a sentence break). Takes that lost their place ran
+# 0.111–0.180 s per character, or stopped for up to 1.3 s mid-sentence and
+# then went on — heard as wrong or extra words.
+NE_MAX_SEC_PER_CHAR = 0.11
+NE_MAX_PAUSE_SENTENCE = 0.6
+NE_MAX_PAUSE_PIECE = 1.0
+
+
+def ne_take_problem(audio, sr: int, text: str) -> str:
+    """Why this take should be voiced again, or "" if it sounds whole.
+
+    Judged on the trimmed take: how long its speech runs for the length of
+    its text, and the longest silence inside it. Short texts are not judged
+    on pace — the model is measured slow on them however good the take.
+    """
+    if _np is None or audio is None or len(audio) == 0:
+        return ""
+    rms, n = _frame_rms(_np.asarray(audio, dtype=_np.float32), sr)  # 20 ms frames
+    if len(rms) < 4 or float(rms.max()) <= 0:
+        return "no speech"
+    on = rms >= float(rms.max()) * 10 ** (-30 / 20)
+    idx = _np.flatnonzero(on)
+    first, last = int(idx[0]), int(idx[-1])
+    frame_s = n / sr
+    span = (last - first + 1) * frame_s
+    chars = len((text or "").strip())
+    if chars >= 20 and span / chars > NE_MAX_SEC_PER_CHAR:
+        return f"too slow for its text ({span / chars:.3f} s per character)"
+    longest = run = 0
+    for v in on[first : last + 1]:
+        run = 0 if v else run + 1
+        longest = max(longest, run)
+    # More than one sentence in the piece: a sentence break may pause longer.
+    inner = re.search(r"[।॥?!.]\s+\S", (text or "").strip())
+    limit = NE_MAX_PAUSE_PIECE if inner else NE_MAX_PAUSE_SENTENCE
+    if longest * frame_s > limit:
+        return f"a {longest * frame_s:.1f} s gap inside the speech"
+    return ""
+
+
 def ne_model_ending(text: str) -> str:
     """End the text the way the Nepali model reads one ending, not two.
 

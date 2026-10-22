@@ -51,6 +51,7 @@ try:
         ne_trim_trailing_blip,
         ne_trim_leading,
         ne_model_ending,
+        ne_take_problem,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -84,6 +85,7 @@ except ImportError:  # pragma: no cover - notebook layout
         ne_trim_trailing_blip,
         ne_trim_leading,
         ne_model_ending,
+        ne_take_problem,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -904,6 +906,7 @@ def _gen_ne(
     Returns (audio, sr, takes).
     """
     first = None
+    best = None  # (seconds per character, audio) of takes that ended but sounded wrong
     sr = 24000
     for take in range(3):
         audio, sr, _ = _generate_chunk(
@@ -932,7 +935,19 @@ def _gen_ne(
             # vowel, and 80 ms lets it fall away the way a voice does.
             # Start on the first word as well: see ne_trim_leading.
             audio = ne_trim_leading(ne_trim_trailing_blip(audio, sr), sr)
-            return _fade_out(audio, sr, 0.08), sr, take + 1
+            # Reaching the end is not enough: a take can lose its place,
+            # stall mid-sentence and carry on with wrong words. See
+            # ne_take_problem; such a take is voiced again with a new seed.
+            problem = ne_take_problem(audio, sr, text)
+            if not problem:
+                return _fade_out(audio, sr, 0.08), sr, take + 1
+            _NE_GUARD.setdefault("rerolled", []).append(problem)
+            score = len(audio) / max(1, sr) / max(1, len(text))
+            if best is None or score < best[0]:
+                best = (score, audio)
+    if best is not None:
+        # Every take ended but none sounded whole: keep the tightest one.
+        return _fade_out(best[1], sr, 0.08), sr, 3
     _NE_GUARD["failed_takes"] = True
     return _fade_out(ne_trim_leading(first, sr), sr), sr, 3
 
@@ -972,6 +987,8 @@ def _gen_ne_text(text: str, voice_id: str, **kw: Any) -> tuple:
         _NE_GUARD.clear()
         audio, sr, k = _gen_ne(piece, voice_id, seed=seed + n * 104729, **kw)
         takes += k
+        if _NE_GUARD.get("rerolled"):
+            notes.append(f"re-voiced {len(_NE_GUARD['rerolled'])} take(s): " + "; ".join(_NE_GUARD["rerolled"]))
         if not _NE_GUARD.get("failed_takes"):
             return audio
         smaller = ne_split_for_retry(piece) if allow_split else []
