@@ -421,7 +421,7 @@ def ne_model_ending(text: str) -> str:
 def ne_trim_leading(
     audio,
     sr: int,
-    keep: float = 0.06,
+    keep: float = 0.15,
     blip: float = 0.2,
     gap: float = 0.6,
     window: float = 2.5,

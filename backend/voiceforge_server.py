@@ -986,11 +986,13 @@ _NE_ENDING: Dict[str, int] = {"frames": 0}
 # and later to compare versions of the owner's own model.
 _NE_REQUEST: Dict[str, Any] = {"plain": False, "source": "", "punct_frames": 0}
 # Frames (40 ms) a take runs on after the model reaches the closing
-# punctuation. 2 ended the old checkpoint before its stray after-sounds, but
-# on the merged one it cuts the last syllable while still loud ("स्वागत छ"
-# stops abruptly where the speaker lets it fade). A request may set
-# punct_frames (2–12) to compare.
-NE_PUNCT_FRAMES = int(os.environ.get("VOICEFORGE_NE_PUNCT_FRAMES", "2") or 2)
+# punctuation. 2 was set for the old checkpoint's stray after-sounds, but it
+# stopped 7 of 12 takes while the last word was still sounding — "स्वागत छ"
+# came out cut or garbled. Measured on the merged checkpoint (4 sentences ×
+# 3 seeds): 8 here with a 12-frame hold on the last letter cut none, and
+# "छ" was heard; 12/12 also cut none but drew one ending out. A request may
+# set punct_frames (2–12) to compare.
+NE_PUNCT_FRAMES = int(os.environ.get("VOICEFORGE_NE_PUNCT_FRAMES", "8") or 8)
 _PUNC_BYPASS: Dict[str, bool] = {"on": False}
 _NE_ALLOWED_REPOS = ("Firoj112/chatterbox-nepali-runs",)
 _NE_VARIANT: Dict[str, Any] = {}

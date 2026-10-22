@@ -405,7 +405,7 @@ export async function createAndDispatchJob(
     params: {
       // A request's own pace wins; otherwise Nepali uses the one in Settings.
       ...(neSettings
-        ? { pace: neSettings.nepaliSpeed ?? 1, ending_frames: neSettings.nepaliEnding ?? 6 }
+        ? { pace: neSettings.nepaliSpeed ?? 1, ending_frames: neSettings.nepaliEnding ?? 12 }
         : {}),
       ...input.params,
       language: synth.modelLanguage,

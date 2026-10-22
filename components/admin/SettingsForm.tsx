@@ -197,13 +197,13 @@ export function SettingsForm({
             min={3}
             max={12}
             step={1}
-            value={values.nepaliEnding ?? 6}
+            value={values.nepaliEnding ?? 12}
             onChange={(e) => patch({ nepaliEnding: Number(e.target.value) })}
             className="w-44"
             aria-label="Nepali sentence ending"
           />
           <span className="font-mono text-[13px] tabular-nums text-ink">
-            {values.nepaliEnding ?? 6}
+            {values.nepaliEnding ?? 12}
           </span>
           <span className="text-[12px] text-faint">3 short · 6 default · 12 long</span>
         </div>

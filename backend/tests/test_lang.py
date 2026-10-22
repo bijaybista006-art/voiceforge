@@ -409,7 +409,7 @@ class TestLeadingTrim:
         sr = 24000
         clip = np.concatenate([self._quiet(1.8), self._tone(2.0)])
         out = ne_trim_leading(clip, sr)
-        assert 2.0 <= len(out) / sr <= 2.1
+        assert 2.0 <= len(out) / sr <= 2.2
 
     def test_a_blip_then_silence_is_dropped(self):
         import numpy as np
@@ -419,7 +419,7 @@ class TestLeadingTrim:
         # nothing, then the sentence.
         clip = np.concatenate([self._tone(0.12), self._quiet(1.0), self._tone(2.0)])
         out = ne_trim_leading(clip, sr)
-        assert 2.0 <= len(out) / sr <= 2.1
+        assert 2.0 <= len(out) / sr <= 2.2
 
     def test_a_short_first_word_before_a_comma_is_kept(self):
         import numpy as np

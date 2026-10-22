@@ -68,8 +68,10 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   // The model's own pace. 0.92 was tried and measured (Oct 2026): it made
   // narration 8% slower than the speaker's own recordings of the same lines.
   nepaliSpeed: 1,
-  // Left to itself the model draws the last word of a sentence out.
-  nepaliEnding: 6,
+  // Frames the last letter may sound before the take ends. 6 stopped most
+  // takes while the last word was still sounding; 12 (with 8 frames after
+  // the closing punctuation) let it finish — measured Oct 2026.
+  nepaliEnding: 12,
 };
 
 export async function getSettings(): Promise<PlatformSettings> {
