@@ -43,9 +43,12 @@ export const MAX_CHARS = 240;
 /** Chunks under this get merged into a neighbour — tiny chunks sound clipped. */
 export const MIN_CHARS = 20;
 
-/** Stitch gaps (seconds). Tuned — don't casually change. */
-export const SENTENCE_GAP_SEC = 0.35;
-export const PARAGRAPH_GAP_SEC = 0.7;
+/** Stitch gaps (seconds). Retuned Oct 2026 against the speaker's own pauses: change them by measurement, not by feel. */
+// Gaps between clips in the studio. Matched to the pause inside a Nepali
+// clip (SENTENCE_GAP_SEC in the backend), so a sentence break sounds the same
+// whether or not it falls between two clips.
+export const SENTENCE_GAP_SEC = 0.55;
+export const PARAGRAPH_GAP_SEC = 0.9;
 
 /** Export peak-normalization target. */
 export const NORMALIZE_PEAK_DBFS = -1;

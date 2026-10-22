@@ -174,7 +174,14 @@ def ne_chunks(text: str, max_chars: int = 240) -> List[str]:
 
 
 # A chunk shorter than this is not sent to the model on its own.
-NE_MIN_CHUNK_CHARS = 40
+# Below this a sentence rides with a neighbour (see ne_merge_short). It was
+# 40, which also merged ordinary sentences like "नमस्ते साथीहरू, आजको
+# भिडियोमा स्वागत छ।" (39) — and then the model chose the pause between them:
+# 0.7 s in one take, none at all in the next, where the speaker always
+# pauses. Sentences of 36–39 characters voiced alone came back clean on both
+# checkpoints (Oct 2026), so only genuinely short ones are merged now, and
+# every other sentence end gets the same pause (SENTENCE_GAP_SEC).
+NE_MIN_CHUNK_CHARS = 25
 # The checkpoint's authors put its limit at 200 characters per input.
 NE_MAX_CHUNK_CHARS = 200
 

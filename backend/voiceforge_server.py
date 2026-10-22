@@ -126,7 +126,10 @@ VERSION = "2.0.0"
 DEFAULT_EXAGGERATION = 0.4
 DEFAULT_CFG = 0.5
 DEFAULT_TEMPERATURE = 0.7
-SENTENCE_GAP_SEC = 0.35
+# Silence between sentences voiced as separate takes. With each take's own
+# lead-in and fade this comes to ~0.75 s, close to how the speaker pauses
+# after "।" in their own recordings (0.35 sounded rushed).
+SENTENCE_GAP_SEC = 0.55
 PARAGRAPH_GAP_SEC = 0.7
 PEAK_DBFS = -1.0
 
