@@ -27,7 +27,6 @@ from backend.voiceforge_lang import (  # noqa: E402
     ne_model_ending,
     ne_take_problem,
     ne_plain_text,
-    ne_end_on_dip,
     ne_expand_digits,
     ne_prepare,
     ne_spell_number,
@@ -368,36 +367,6 @@ class TestTakeProblem:
 
     def test_short_texts_are_not_judged_on_pace(self):
         assert ne_take_problem(self._tone(3.0), 24000, "नमस्ते।") == ""
-
-
-class TestEndOnDip:
-    _tone = staticmethod(TestTrailingBlip._tone)
-    _quiet = staticmethod(TestTrailingBlip._quiet)
-
-    def test_a_take_stopped_mid_after_sound_ends_at_the_dip(self):
-        import numpy as np
-
-        # "…स्वागत छ" then a 60 ms dip, then a stray sound cut off while loud.
-        clip = np.concatenate([self._tone(2.5), self._quiet(0.06), self._tone(0.22)])
-        out = ne_end_on_dip(clip, 24000)
-        assert 2.5 <= len(out) / 24000 <= 2.58
-
-    def test_a_take_that_fades_out_is_untouched(self):
-        import numpy as np
-
-        fading = self._tone(0.3) * np.linspace(1.0, 0.0, int(0.3 * 24000), dtype=np.float32)
-        clip = np.concatenate([self._tone(2.5), self._quiet(0.06), fading])
-        assert len(ne_end_on_dip(clip, 24000)) == len(clip)
-
-    def test_loud_to_the_end_with_no_dip_is_kept(self):
-        clip = self._tone(2.5)
-        assert len(ne_end_on_dip(clip, 24000)) == len(clip)
-
-    def test_a_dip_too_far_back_is_ignored(self):
-        import numpy as np
-
-        clip = np.concatenate([self._tone(1.0), self._quiet(0.06), self._tone(1.0)])
-        assert len(ne_end_on_dip(clip, 24000)) == len(clip)
 
 
 class TestPlainText:
