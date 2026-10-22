@@ -52,6 +52,7 @@ try:
         ne_trim_leading,
         ne_model_ending,
         ne_take_problem,
+        ne_plain_text,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -86,6 +87,7 @@ except ImportError:  # pragma: no cover - notebook layout
         ne_trim_leading,
         ne_model_ending,
         ne_take_problem,
+        ne_plain_text,
         EngineUnavailable,
         DEFAULT_ENGINE,
         PAUSE_TAG_SEC,
@@ -357,6 +359,7 @@ def load_models(load_qwen: bool = False) -> List[str]:
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
     _patch_stream_analyzer()
+    _patch_punc_norm()
     MODELS["chatterbox"] = ChatterboxMultilingualTTS.from_pretrained(device=device)
     _guard_vocoder(MODELS["chatterbox"])
     print("chatterbox (multilingual) ready", flush=True)
@@ -561,7 +564,7 @@ def _register_ne_tag(model, want_rows: Optional[int]) -> str:
         return "hi"
 
 
-def _load_ne_model():
+def _load_ne_model(repo: str = "", file: str = ""):
     """Base multilingual Chatterbox with a Nepali T3 swapped in.
 
     The published Nepali work is a fine-tune of the T3 stage only — the voice
@@ -570,7 +573,9 @@ def _load_ne_model():
     repos ship one weights file and nothing else, and from_pretrained would
     fail looking for the rest.
     """
-    if not NE_MODEL:
+    repo = repo or NE_MODEL
+    file = file or NE_FILE
+    if not repo:
         raise RuntimeError("no Nepali model configured (set VOICEFORGE_NE_MODEL)")
 
     from chatterbox.mtl_tts import ChatterboxMultilingualTTS  # noqa: PLC0415
@@ -580,11 +585,11 @@ def _load_ne_model():
     model = ChatterboxMultilingualTTS.from_pretrained(device=device)
 
     path = (
-        NE_MODEL
-        if os.path.exists(NE_MODEL)
+        repo
+        if os.path.exists(repo)
         else hf_hub_download(
-            repo_id=NE_MODEL,
-            filename=NE_FILE,
+            repo_id=repo,
+            filename=file,
             # Only needed for a gated mirror; harmless when absent.
             token=os.environ.get("HF_TOKEN") or None,
         )
@@ -616,7 +621,7 @@ def _load_ne_model():
     )
     if matched == 0:
         raise RuntimeError(
-            f"{NE_FILE} matched no T3 parameters — wrong file or wrong architecture"
+            f"{file} matched no T3 parameters — wrong file or wrong architecture"
         )
 
     want = state.get("text_emb.weight")
@@ -719,8 +724,12 @@ def _generate_chunk(
         model = "chatterbox-ne"
         # The tag the checkpoint was trained with — see NE_LANGUAGE_ID.
         language = _NE_TAG["id"]
-        # One sentence ending, not two: see ne_model_ending.
-        text = ne_model_ending(text)
+        if _NE_REQUEST["plain"]:
+            # The text as the checkpoint was trained on it — see ne_plain_text.
+            text = ne_plain_text(text)
+        else:
+            # One sentence ending, not two: see ne_model_ending.
+            text = ne_model_ending(text)
 
     if model in ("chatterbox", "chatterbox-ne"):
         import inspect
@@ -732,7 +741,8 @@ def _generate_chunk(
             "cfg_weight": float(cfg),
             "temperature": float(temperature),
         }
-        accepted = inspect.signature(MODELS[model].generate).parameters
+        target = _ne_model_for(_NE_REQUEST["source"]) if model == "chatterbox-ne" else MODELS[model]
+        accepted = inspect.signature(target.generate).parameters
         kwargs = {k: v for k, v in kwargs.items() if k in accepted}
         _LAST_STOP["why"] = ""
         _LAST_STOP["dropped"] = 0
@@ -747,12 +757,14 @@ def _generate_chunk(
         else:
             _TAIL_RULE["frames"] = 0
             _TAIL_RULE["min_frames"] = 0
+        _PUNC_BYPASS["on"] = model == "chatterbox-ne" and _NE_REQUEST["plain"]
         try:
-            wav = MODELS[model].generate(text, **kwargs)
+            wav = target.generate(text, **kwargs)
         finally:
             _TAIL_RULE["frames"] = 0
+            _PUNC_BYPASS["on"] = False
         audio = wav.squeeze(0).cpu().numpy()
-        sr = MODELS[model].sr
+        sr = target.sr
         # One line per take. Without it a bad render can only be described,
         # never diagnosed: this says which model and tag ran, how much audio
         # came back for how much text, and whether a check cut it short.
@@ -762,6 +774,8 @@ def _generate_chunk(
                 "model": model,
                 "tag": language,
                 "chars": len(text),
+                **({"ne_source": _NE_REQUEST["source"]} if model == "chatterbox-ne" and _NE_REQUEST["source"] else {}),
+                **({"text_style": "plain"} if model == "chatterbox-ne" and _NE_REQUEST["plain"] else {}),
                 "audio": round(len(audio) / max(1, sr), 2),
                 "stop": _LAST_STOP["why"] or "natural",
                 "dropped_tokens": _LAST_STOP.get("dropped") or None,
@@ -957,6 +971,66 @@ _NE_GUARD: Dict[str, Any] = {}
 # How many frames a Nepali take may spend on its last letter, when the request
 # says. Set per job from its params, under the GPU lock; 0 means the default.
 _NE_ENDING: Dict[str, int] = {"frames": 0}
+
+# Two opt-in test switches, set per job under the GPU lock. Neither changes
+# anything unless a request asks for it:
+#   ne_text: "plain"  — text as the checkpoint was trained on it (no
+#                       punctuation, and the library adds none); see ne_plain_text.
+#   ne_source: "file" or "repo:file" — voice this request with another
+#                       checkpoint, from the configured repo or the original one.
+# They exist to compare checkpoints and input styles on the real pipeline,
+# and later to compare versions of the owner's own model.
+_NE_REQUEST: Dict[str, Any] = {"plain": False, "source": ""}
+_PUNC_BYPASS: Dict[str, bool] = {"on": False}
+_NE_ALLOWED_REPOS = ("Firoj112/chatterbox-nepali-runs",)
+_NE_VARIANT: Dict[str, Any] = {}
+
+
+def _set_ne_request(params: Dict[str, Any]) -> None:
+    _NE_REQUEST["plain"] = str(params.get("ne_text") or "").lower() == "plain"
+    _NE_REQUEST["source"] = str(params.get("ne_source") or "").strip()[:200]
+
+
+def _ne_model_for(source: str):
+    """The Nepali model to voice with: the loaded one, or another checkpoint.
+
+    Only files from the configured repo (VOICEFORGE_NE_MODEL) or the original
+    it was copied from are accepted. One extra checkpoint is kept loaded at a
+    time; asking for another replaces it.
+    """
+    if not source:
+        return MODELS["chatterbox-ne"]
+    repo, _, file = source.rpartition(":")
+    repo = repo or NE_MODEL
+    if repo != NE_MODEL and repo not in _NE_ALLOWED_REPOS:
+        raise ValueError(f"ne_source repo not allowed: {repo}")
+    key = f"{repo}:{file}"
+    if _NE_VARIANT.get("key") != key:
+        _NE_VARIANT.clear()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        _NE_VARIANT["model"] = _load_ne_model(repo, file)
+        _NE_VARIANT["key"] = key
+        print(f"[engine] nepali variant loaded: {key}", flush=True)
+    return _NE_VARIANT["model"]
+
+
+def _patch_punc_norm() -> None:
+    """Let a plain-text request reach the model without an added full stop."""
+    try:
+        import chatterbox.mtl_tts as mtl  # noqa: PLC0415
+
+        if getattr(mtl, "_vf_punc", False):
+            return
+        original = mtl.punc_norm
+
+        def punc_norm(text):  # noqa: ANN001, ANN202
+            return " ".join(str(text).split()) if _PUNC_BYPASS["on"] else original(text)
+
+        mtl.punc_norm = punc_norm
+        mtl._vf_punc = True
+    except Exception as e:  # noqa: BLE001
+        print(f"[engine] punctuation bypass unavailable: {e}", flush=True)
 
 
 def _gen_ne_text(text: str, voice_id: str, **kw: Any) -> tuple:
@@ -1268,6 +1342,7 @@ def _run_job(job: Dict[str, Any]) -> None:
                     # One clip per chunk, guarded against a take that will
                     # not end; see _gen_ne_text.
                     _NE_ENDING["frames"] = ne_ending_frames(params)
+                    _set_ne_request(params)
                     audio, sr, takes, guard_note = _gen_ne_text(
                         text,
                         job["voice_id"],
@@ -1619,6 +1694,7 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
                 with _GPU_LOCK:
                     _BUSY = True
                     _NE_ENDING["frames"] = ne_ending_frames(p)
+                    _set_ne_request(p)
                     audio, sr, _takes, _note = _gen_ne_text(
                         p["text"],
                         p["voice_id"],

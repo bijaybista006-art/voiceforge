@@ -62,6 +62,10 @@ const paramsSchema = z
     ending_frames: z.number().int().min(3).max(12).optional(),
     /** Run on this backend only, instead of the first one available. */
     backend: z.enum(["colab", "kaggle", "custom", "modal"]).optional(),
+    /** Nepali test switch: "plain" sends text without punctuation, as the model was trained. */
+    ne_text: z.enum(["plain"]).optional(),
+    /** Nepali test switch: another checkpoint, "file" or "repo:file" (own repo or the original). */
+    ne_source: z.string().min(1).max(200).optional(),
     ...expressiveFields,
   })
   .optional();

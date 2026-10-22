@@ -26,6 +26,7 @@ from backend.voiceforge_lang import (  # noqa: E402
     ne_trim_leading,
     ne_model_ending,
     ne_take_problem,
+    ne_plain_text,
     ne_expand_digits,
     ne_prepare,
     ne_spell_number,
@@ -366,6 +367,21 @@ class TestTakeProblem:
 
     def test_short_texts_are_not_judged_on_pace(self):
         assert ne_take_problem(self._tone(3.0), 24000, "नमस्ते।") == ""
+
+
+class TestPlainText:
+    def test_punctuation_goes_like_in_the_training_transcripts(self):
+        assert ne_plain_text("नमस्ते साथीहरू, आजको भिडियोमा स्वागत छ।") == "नमस्ते साथीहरू आजको भिडियोमा स्वागत छ"
+
+    def test_sentences_run_together_without_marks(self):
+        assert ne_plain_text("के यो सत्य हो? हो।") == "के यो सत्य हो हो"
+
+    def test_letters_and_signs_stay(self):
+        text = "प्रमाणीकरण गर्नुहोस्"
+        assert ne_plain_text(text) == text
+
+    def test_empty(self):
+        assert ne_plain_text("") == ""
 
 
 class TestModelEnding:

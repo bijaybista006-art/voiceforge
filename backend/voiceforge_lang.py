@@ -389,6 +389,19 @@ def ne_take_problem(audio, sr: int, text: str) -> str:
     return ""
 
 
+def ne_plain_text(text: str) -> str:
+    """Nepali text the way the checkpoint was trained on it.
+
+    The Nepali T3 (Firoj112/chatterbox-nepali-runs) was fine-tuned on
+    Firoj112/voxcpm-nepali-data — IndicVoices-R Nepali, 7,201 transcripts —
+    and not one of them has any punctuation: no "।", ",", "." or "?"
+    (checked Oct 2026). Everything it knows about where speech pauses and
+    ends was learned without those marks, so this strips them; the caller
+    also stops the library adding a full stop of its own.
+    """
+    return " ".join(re.sub(r"[।॥,.!?;:\"'“”‘’()\[\]{}…—–-]", " ", text or "").split())
+
+
 def ne_model_ending(text: str) -> str:
     """End the text the way the Nepali model reads one ending, not two.
 
