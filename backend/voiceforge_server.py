@@ -28,6 +28,7 @@ the callback carries metadata only and the gateway then pulls each file.
 from __future__ import annotations
 
 import base64
+import gc
 import io
 import os
 import re
@@ -146,6 +147,7 @@ os.makedirs(JOBS_DIR, exist_ok=True)
 MODELS: Dict[str, Any] = {}
 VOICES: Dict[str, Dict[str, str]] = {}
 _GPU_LOCK = threading.Lock()  # one generation at a time: a single GPU
+_LOAD_LOCK = threading.Lock()  # one model load at a time; see engine_available
 _BUSY = False
 
 
@@ -688,15 +690,29 @@ def engine_available(engine: str) -> bool:
             _ENGINE_FAILED_AT[engine] = time.time()
             print("[engine] chatterbox-ne unavailable: no model configured", flush=True)
             return False
-        try:
-            MODELS["chatterbox-ne"] = _load_ne_model()
-            print(f"[engine] chatterbox-ne ready ({NE_MODEL})", flush=True)
-            return True
-        except Exception as e:  # noqa: BLE001
-            _ENGINE_FAILED[engine] = str(e)[:200]
-            _ENGINE_FAILED_AT[engine] = time.time()
-            print(f"[engine] chatterbox-ne failed to load: {e}", flush=True)
-            return False
+        # One load at a time. Jobs ask for the engine before they queue for
+        # the GPU, so six jobs arriving at a cold container each loaded their
+        # own copy: a T4 ran out of memory, and the leftovers broke every job
+        # after (cuFFT errors) until the container shut down (Oct 2026).
+        with _LOAD_LOCK:
+            if "chatterbox-ne" in MODELS:
+                return True
+            if engine in _ENGINE_FAILED:
+                return False  # failed while this job waited
+            try:
+                MODELS["chatterbox-ne"] = _load_ne_model()
+                print(f"[engine] chatterbox-ne ready ({NE_MODEL})", flush=True)
+                return True
+            except Exception as e:  # noqa: BLE001
+                _ENGINE_FAILED[engine] = str(e)[:200]
+                _ENGINE_FAILED_AT[engine] = time.time()
+                print(f"[engine] chatterbox-ne failed to load: {e}", flush=True)
+                # Give back whatever the failed load allocated, or the next
+                # try fails on memory this one still holds.
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                return False
     _ENGINE_FAILED[engine] = "unknown engine"
     return False
 
