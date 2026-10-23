@@ -111,6 +111,64 @@ export function checkReference(samples: Float32Array, sr: number): ReferenceChec
   return { leadSec, styleCutsSpeech, quietBeforeMarkSec, warnings };
 }
 
+export interface ArrangedRecording {
+  samples: Float32Array;
+  /** Where the speech before the 6-second mark ends. */
+  styleEndsAt: number;
+  /** Where the speech after the mark starts. */
+  restStartsAt: number;
+}
+
+/**
+ * Lay one continuous recording out the way the model needs it: speech from
+ * the first moment, the first sentence over by about 4 seconds, silence across
+ * the 6-second mark, the rest after. People reading "line one, pause, line
+ * two" pause for whatever time feels natural, so the pause is found and set
+ * to length here rather than asked of the reader. Null when the recording has
+ * no pause after 3–4.8 s of speech to build the layout from.
+ */
+export function arrangeRecording(samples: Float32Array, sr: number): ArrangedRecording | null {
+  const LATEST = STYLE_SECONDS - MIN_QUIET_BEFORE_MARK - 0.2;
+  const EARLIEST = 3.0;
+  const TARGET = 4.3;
+  const MIN_PAUSE_FRAMES = Math.round(0.3 / FRAME_SEC);
+  const PAD = 0.06; // a word's last sound decays below the silence line
+  const on = soundFrames(samples, sr);
+  const first = on.indexOf(true);
+  if (first < 0) return null;
+  const lead = Math.max(0, first * FRAME_SEC - 0.04);
+
+  // Every pause of 0.3 s or more, as (speech ends, speech resumes).
+  let best: { end: number; next: number } | null = null;
+  let quietFrom = -1;
+  for (let i = first; i < on.length; i++) {
+    if (!on[i]) {
+      if (quietFrom < 0) quietFrom = i;
+      continue;
+    }
+    if (quietFrom >= 0 && i - quietFrom >= MIN_PAUSE_FRAMES) {
+      const end = quietFrom * FRAME_SEC - lead + PAD;
+      if (end >= EARLIEST && end <= LATEST && (!best || Math.abs(end - TARGET) < Math.abs(best.end - TARGET))) {
+        best = { end, next: i * FRAME_SEC - 0.04 };
+      }
+    }
+    quietFrom = -1;
+  }
+  if (!best) return null;
+
+  const a = Math.floor(lead * sr);
+  const head = samples.slice(a, a + Math.round(best.end * sr));
+  const rest = samples.slice(Math.floor(best.next * sr));
+  const fade = Math.round(0.01 * sr);
+  for (let i = 0; i < fade && i < head.length; i++) head[head.length - 1 - i] *= i / fade;
+  for (let i = 0; i < fade && i < rest.length; i++) rest[i] *= i / fade;
+  const pause = Math.max(1.3, STYLE_SECONDS + 0.3 - best.end);
+  const out = new Float32Array(head.length + Math.round(pause * sr) + rest.length);
+  out.set(head, 0);
+  out.set(rest, out.length - rest.length);
+  return { samples: out, styleEndsAt: best.end, restStartsAt: (out.length - rest.length) / sr };
+}
+
 export interface BuiltReference {
   samples: Float32Array;
   /** Which input clips were used, in the order they play. */

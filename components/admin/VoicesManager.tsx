@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { decodeAudioBlob, encodeWavPcm16, formatDuration } from "@/lib/audio";
 import { LANGUAGES, SAMPLE_IDEAL_MAX_SEC, SAMPLE_IDEAL_MIN_SEC } from "@/lib/config";
 import { toast } from "@/lib/toast";
 import type { LibraryVoiceView, VoiceRefSlot } from "@/lib/types";
-import { checkReference, speechBounds } from "@/lib/voiceReference";
+import { arrangeRecording, checkReference, speechBounds } from "@/lib/voiceReference";
+import { looksNepali, scriptGuide, scriptText } from "@/lib/voiceScripts";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
@@ -176,68 +177,192 @@ export function VoicesManager() {
 
 // --- add ------------------------------------------------------------------
 
+const LANGUAGE_KEY = "vf:voice-language";
+/** Recording stops by itself here; only the first 10 seconds shape the voice. */
+const MAX_RECORD_SEC = 30;
+
+interface PreparedClip {
+  /** What is saved: laid out for the model when that was possible. */
+  blob: Blob;
+  durationSec: number;
+  /** The clip exactly as recorded or uploaded, lead-in silence trimmed. */
+  original: { blob: Blob; durationSec: number; warnings: string[] };
+  /** Set when the clip was laid out: where the first part ends. */
+  arranged: { styleEndsAt: number; restStartsAt: number } | null;
+  fileName: string;
+  trimmedSec: number;
+  warnings: string[];
+}
+
 function AddVoiceCard({ disabled, onAdded }: { disabled: boolean; onAdded: () => void }) {
   const fileInput = useRef<HTMLInputElement>(null);
-  const [wav, setWav] = useState<{
-    blob: Blob;
-    durationSec: number;
-    fileName: string;
-    trimmedSec: number;
-    warnings: string[];
-  } | null>(null);
+  const [source, setSource] = useState<"record" | "upload">("record");
+  const [clip, setClip] = useState<PreparedClip | null>(null);
+  const [useOriginal, setUseOriginal] = useState(false);
   const [name, setName] = useState("");
-  const [language, setLanguage] = useState("en");
+  const [language, setLanguageState] = useState("en");
+  const [languageNote, setLanguageNote] = useState(false);
   const [transcript, setTranscript] = useState("");
+  const [scriptIdx, setScriptIdx] = useState(0);
+  const [ownWords, setOwnWords] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [level, setLevel] = useState(0);
+  const media = useRef<{ recorder: MediaRecorder; stream: MediaStream; ctx: AudioContext; raf: number } | null>(null);
+  const chunks = useRef<BlobPart[]>([]);
+  const startedAt = useRef(0);
+
+  const guide = scriptGuide(language);
+  const script = guide.scripts.length ? guide.scripts[scriptIdx % guide.scripts.length] : null;
+  const readingScript = source === "record" && !ownWords && script !== null;
+  const chosen = clip ? (useOriginal ? clip.original : clip) : null;
+  const warnings = clip ? (useOriginal ? clip.original.warnings : clip.warnings) : [];
 
   useEffect(() => {
-    if (!wav) {
-      setPreviewUrl(null);
-      return;
+    try {
+      const saved = localStorage.getItem(LANGUAGE_KEY);
+      if (saved && LANGUAGES.some((l) => l.code === saved)) setLanguageState(saved);
+    } catch {
+      // No storage: English it is.
     }
-    const url = URL.createObjectURL(wav.blob);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [wav]);
+  }, []);
+
+  useEffect(() => () => stopTracks(), []);
+
+  // The transcript follows the script being read, so the voice is saved with
+  // the right words without typing them.
+  useEffect(() => {
+    if (readingScript && script) setTranscript(scriptText(script));
+  }, [readingScript, script]);
+
+  const previewUrl = useMemo(() => (chosen ? URL.createObjectURL(chosen.blob) : null), [chosen]);
+  useEffect(() => () => (previewUrl ? URL.revokeObjectURL(previewUrl) : undefined), [previewUrl]);
+
+  function setLanguage(code: string) {
+    setLanguageState(code);
+    setLanguageNote(false);
+    setScriptIdx(0);
+    try {
+      localStorage.setItem(LANGUAGE_KEY, code);
+    } catch {
+      // Remembering is a convenience.
+    }
+  }
+
+  function changeTranscript(text: string) {
+    setTranscript(text);
+    // Not while reading a script: switching would swap the script and its words.
+    if (!readingScript && looksNepali(text) && language !== "ne" && language !== "hi") {
+      setLanguage("ne");
+      setLanguageNote(true);
+    }
+  }
 
   /**
-   * Decode whatever was picked and re-encode to 16-bit PCM WAV here, in the
-   * browser. The backends read clips with soundfile, whose MP3 support depends
-   * on the libsndfile build on the GPU host — so we never send one.
+   * Decode whatever was recorded or picked and re-encode to 16-bit PCM WAV
+   * here, in the browser. The backends read clips with soundfile, whose MP3
+   * support depends on the libsndfile build on the GPU host — so we never
+   * send one. The clip is also laid out the way the model reads it: first
+   * line, quiet across the 6-second mark, the rest (lib/voiceReference.ts).
    */
-  async function onPick(file: File) {
+  async function prepare(blob: Blob, fileName: string) {
     setPreparing(true);
     try {
-      const decoded = await decodeAudioBlob(file);
+      const decoded = await decodeAudioBlob(blob);
+      const sr = decoded.sampleRate;
       // Silence before the first word is copied into every generated clip,
-      // so it is cut here; see lib/voiceReference.ts.
-      const lead = speechBounds(decoded.samples, decoded.sampleRate)?.start ?? 0;
-      const cut = lead > 0.1 ? Math.floor((lead - 0.05) * decoded.sampleRate) : 0;
-      const pcm = { samples: decoded.samples.slice(cut), sampleRate: decoded.sampleRate };
-      const durationSec = pcm.samples.length / pcm.sampleRate;
-      setWav({
-        blob: encodeWavPcm16(pcm),
-        durationSec,
-        fileName: file.name,
-        trimmedSec: cut / decoded.sampleRate,
-        warnings: checkReference(pcm.samples, pcm.sampleRate).warnings,
+      // so it is cut here either way.
+      const lead = speechBounds(decoded.samples, sr)?.start ?? 0;
+      const cut = lead > 0.1 ? Math.floor((lead - 0.05) * sr) : 0;
+      const trimmed = decoded.samples.slice(cut);
+      const original = {
+        blob: encodeWavPcm16({ samples: trimmed, sampleRate: sr }),
+        durationSec: trimmed.length / sr,
+        warnings: checkReference(trimmed, sr).warnings,
+      };
+      const arranged = arrangeRecording(decoded.samples, sr);
+      const samples = arranged?.samples ?? trimmed;
+      setClip({
+        blob: arranged ? encodeWavPcm16({ samples, sampleRate: sr }) : original.blob,
+        durationSec: samples.length / sr,
+        original,
+        arranged: arranged ? { styleEndsAt: arranged.styleEndsAt, restStartsAt: arranged.restStartsAt } : null,
+        fileName,
+        trimmedSec: cut / sr,
+        warnings: arranged ? checkReference(samples, sr).warnings : original.warnings,
       });
-      if (!name) setName(file.name.replace(/\.[^.]+$/, "").slice(0, 60));
+      setUseOriginal(false);
     } catch {
-      toast("Couldn't read that audio file. Try a WAV, MP3 or M4A.", "error");
+      toast("Couldn't read that audio. Try recording again, or a WAV, MP3 or M4A file.", "error");
     } finally {
       setPreparing(false);
     }
   }
 
+  function stopTracks() {
+    const m = media.current;
+    if (!m) return;
+    cancelAnimationFrame(m.raf);
+    if (m.recorder.state !== "inactive") m.recorder.stop();
+    m.stream.getTracks().forEach((t) => t.stop());
+    void m.ctx.close();
+    media.current = null;
+  }
+
+  async function startRecording() {
+    try {
+      // Raw input: echo cancellation, noise suppression and automatic gain
+      // all change the voice, and the clone would copy the processing.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
+      });
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      const buf = new Float32Array(analyser.fftSize);
+      const recorder = new MediaRecorder(stream);
+      chunks.current = [];
+      recorder.ondataavailable = (e) => chunks.current.push(e.data);
+      recorder.onstop = () => void prepare(new Blob(chunks.current, { type: recorder.mimeType }), "Recording");
+      recorder.start();
+      startedAt.current = performance.now();
+      setClip(null);
+
+      const tick = () => {
+        analyser.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (const v of buf) sum += v * v;
+        const secs = (performance.now() - startedAt.current) / 1000;
+        setLevel(Math.min(1, Math.sqrt(sum / buf.length) * 4));
+        setElapsed(secs);
+        if (secs > MAX_RECORD_SEC) {
+          stopRecording();
+          return;
+        }
+        if (media.current) media.current.raf = requestAnimationFrame(tick);
+      };
+      media.current = { recorder, stream, ctx, raf: requestAnimationFrame(tick) };
+      setRecording(true);
+    } catch {
+      toast("Microphone access was denied. Allow it in the browser, or upload a file.", "error");
+    }
+  }
+
+  function stopRecording() {
+    stopTracks();
+    setRecording(false);
+    setLevel(0);
+  }
+
   async function submit() {
-    if (!wav) return;
+    if (!chosen) return;
     setUploading(true);
     try {
       const form = new FormData();
-      form.append("audio", wav.blob, "reference.wav");
+      form.append("audio", chosen.blob, "reference.wav");
       form.append("name", name.trim());
       form.append("language", language);
       form.append("transcript", transcript.trim());
@@ -249,9 +374,9 @@ function AddVoiceCard({ disabled, onAdded }: { disabled: boolean; onAdded: () =>
         return;
       }
       toast(`"${name.trim()}" added to the library.`, "success");
-      setWav(null);
+      setClip(null);
       setName("");
-      setTranscript("");
+      setTranscript(readingScript && script ? scriptText(script) : "");
       if (fileInput.current) fileInput.current.value = "";
       onAdded();
     } catch {
@@ -261,8 +386,8 @@ function AddVoiceCard({ disabled, onAdded }: { disabled: boolean; onAdded: () =>
     }
   }
 
-  const tooShort = wav !== null && wav.durationSec < 4;
-  const canSubmit = Boolean(wav && name.trim() && !tooShort && !uploading && !disabled);
+  const tooShort = chosen !== null && chosen.durationSec < 4;
+  const canSubmit = Boolean(chosen && name.trim() && !tooShort && !uploading && !recording && !disabled);
 
   return (
     <div className="glass-card overflow-hidden">
@@ -274,64 +399,23 @@ function AddVoiceCard({ disabled, onAdded }: { disabled: boolean; onAdded: () =>
       </div>
 
       <div className="space-y-4 px-5 py-4">
-        {/* The file input is its own control with a visible button — never
-            wrapped in a label that also holds other inputs, which silently
-            swallows the click. */}
-        <div>
-          <label className="mb-1.5 block text-[12.5px] font-medium text-muted">
-            Reference clip
-          </label>
-          <input
-            ref={fileInput}
-            type="file"
-            accept="audio/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void onPick(f);
-            }}
-          />
-          <div className="flex flex-wrap items-center gap-3">
-            <Button
-              size="sm"
-              disabled={preparing || uploading}
-              onClick={() => fileInput.current?.click()}
-            >
-              <IconUpload className="h-3.5 w-3.5" />
-              {preparing ? "Reading…" : "Choose file"}
-            </Button>
-            {wav ? (
-              <span className="text-[12.5px] text-muted">
-                {wav.fileName} · {formatDuration(wav.durationSec)}
-              </span>
-            ) : (
-              <span className="text-[12.5px] text-faint">
-                {SAMPLE_IDEAL_MIN_SEC}–{SAMPLE_IDEAL_MAX_SEC}s of clean speech, no music
-              </span>
-            )}
-          </div>
-          {previewUrl ? (
-            <audio src={previewUrl} controls className="mt-3 h-9 w-full max-w-sm" />
-          ) : null}
-          {tooShort ? (
-            <p className="mt-2 text-[12px] text-live">
-              That clip is under 4 seconds — too short to clone reliably.
-            </p>
-          ) : null}
-          {wav && wav.trimmedSec > 0 ? (
-            <p className="mt-2 text-[12px] text-muted">
-              Cut {wav.trimmedSec.toFixed(1)}s of silence from the start, so generated speech starts on time.
-            </p>
-          ) : null}
-          {wav?.warnings.map((w) => (
-            <p key={w} className="mt-2 flex gap-2 text-[12px] text-live">
-              <IconAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              {w}
-            </p>
-          ))}
-        </div>
-
+        {/* Language first: it decides what there is to read. */}
         <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-[12.5px] font-medium text-muted" htmlFor="vf-lang">
+              Language
+            </label>
+            <Select id="vf-lang" value={language} onChange={(e) => setLanguage(e.target.value)}>
+              {LANGUAGES.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.name}
+                </option>
+              ))}
+            </Select>
+            {languageNote ? (
+              <p className="mt-1.5 text-[12px] text-muted">Set to Nepali because the transcript is in Nepali.</p>
+            ) : null}
+          </div>
           <div>
             <label className="mb-1.5 block text-[12.5px] font-medium text-muted" htmlFor="vf-name">
               Name
@@ -340,49 +424,197 @@ function AddVoiceCard({ disabled, onAdded }: { disabled: boolean; onAdded: () =>
               id="vf-name"
               value={name}
               maxLength={80}
-              placeholder="My narration voice"
+              placeholder={language === "ne" ? "My Nepali voice" : "My narration voice"}
               onChange={(e) => setName(e.target.value)}
             />
-          </div>
-          <div>
-            <label className="mb-1.5 block text-[12.5px] font-medium text-muted" htmlFor="vf-lang">
-              Language
-            </label>
-            <Select
-              id="vf-lang"
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-            >
-              {LANGUAGES.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.name}
-                </option>
-              ))}
-            </Select>
           </div>
         </div>
 
         <div>
-          <label
-            className="mb-1.5 block text-[12.5px] font-medium text-muted"
-            htmlFor="vf-transcript"
-          >
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-[12.5px] font-medium text-muted">Reference clip</span>
+            <div className="inline-flex rounded-xl border border-line bg-white p-0.5" role="tablist">
+              {(["record", "upload"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  role="tab"
+                  aria-selected={source === m}
+                  disabled={recording || preparing}
+                  onClick={() => {
+                    setSource(m);
+                    setClip(null);
+                    if (m === "upload") setTranscript("");
+                  }}
+                  className={`h-8 rounded-lg px-3 text-[12.5px] font-medium transition-colors ${
+                    source === m ? "bg-brand-600 text-white" : "text-muted hover:text-ink"
+                  }`}
+                >
+                  {m === "record" ? "Record" : "Upload a file"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {source === "record" ? (
+            <div className="space-y-3">
+              <p lang={language} className="text-[12.5px] leading-relaxed text-muted">
+                {readingScript ? guide.howTo : guide.ownText}
+              </p>
+              {readingScript && script ? (
+                <div lang={language} className="rounded-xl border border-line bg-white px-4 py-4">
+                  <p className="text-[18px] leading-relaxed text-ink">{script.first}</p>
+                  <p className="my-2 flex items-center gap-2 text-[12px] font-medium text-brand-600">
+                    <span className="h-px flex-1 bg-brand-100" />
+                    {guide.pause}
+                    <span className="h-px flex-1 bg-brand-100" />
+                  </p>
+                  <p className="text-[18px] leading-relaxed text-ink">{script.rest}</p>
+                </div>
+              ) : null}
+              <div className="flex flex-wrap items-center gap-3">
+                {recording ? (
+                  <Button variant="danger" size="sm" onClick={stopRecording}>
+                    <span className="h-2 w-2 rounded-sm bg-danger" /> Stop · {elapsed.toFixed(1)}s
+                  </Button>
+                ) : (
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={disabled || preparing || uploading}
+                    onClick={() => void startRecording()}
+                  >
+                    <IconMic className="h-3.5 w-3.5" /> {clip ? "Record again" : "Record"}
+                  </Button>
+                )}
+                {recording ? (
+                  <div className="h-2 w-40 overflow-hidden rounded-full bg-surface3" aria-label="Input level">
+                    <div
+                      className="h-full rounded-full bg-live transition-[width] duration-75"
+                      style={{ width: `${level * 100}%` }}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    {guide.scripts.length > 1 && !ownWords ? (
+                      <Button size="sm" onClick={() => setScriptIdx((i) => i + 1)} disabled={preparing}>
+                        <IconRefresh className="h-3.5 w-3.5" /> Another script
+                      </Button>
+                    ) : null}
+                    {guide.scripts.length ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={preparing}
+                        onClick={() => {
+                          setOwnWords((o) => !o);
+                          setClip(null);
+                          if (!ownWords) setTranscript("");
+                        }}
+                      >
+                        {ownWords ? "Read the suggested script" : "Read my own words"}
+                      </Button>
+                    ) : null}
+                  </>
+                )}
+                {preparing ? <span className="text-[12.5px] text-muted">Checking the clip…</span> : null}
+              </div>
+            </div>
+          ) : (
+            <div>
+              {/* The file input is its own control with a visible button — never
+                  wrapped in a label that also holds other inputs, which silently
+                  swallows the click. */}
+              <input
+                ref={fileInput}
+                type="file"
+                accept="audio/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  void prepare(f, f.name);
+                  if (!name) setName(f.name.replace(/\.[^.]+$/, "").slice(0, 60));
+                }}
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <Button size="sm" disabled={preparing || uploading} onClick={() => fileInput.current?.click()}>
+                  <IconUpload className="h-3.5 w-3.5" />
+                  {preparing ? "Reading…" : "Choose file"}
+                </Button>
+                {clip ? (
+                  <span className="text-[12.5px] text-muted">{clip.fileName}</span>
+                ) : (
+                  <span className="text-[12.5px] text-faint">
+                    {SAMPLE_IDEAL_MIN_SEC}–{SAMPLE_IDEAL_MAX_SEC}s of clean speech, no music
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
+          {chosen && previewUrl ? (
+            <div className="mt-3 space-y-2 rounded-xl border border-line bg-surface2 px-4 py-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <audio src={previewUrl} controls className="h-9 w-full max-w-sm" />
+                <span className="text-[12.5px] text-muted">{formatDuration(chosen.durationSec)}</span>
+              </div>
+              {clip?.arranged ? (
+                <label className="flex items-start gap-2 text-[12px] text-muted">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={!useOriginal}
+                    onChange={(e) => setUseOriginal(!e.target.checked)}
+                  />
+                  <span>
+                    Laid out for the model: the first part ends at {clip.arranged.styleEndsAt.toFixed(1)}s and the
+                    rest starts at {clip.arranged.restStartsAt.toFixed(1)}s, so every generated clip starts cleanly.
+                    Untick to keep it exactly as recorded.
+                  </span>
+                </label>
+              ) : clip && clip.trimmedSec > 0 ? (
+                <p className="text-[12px] text-muted">
+                  Cut {clip.trimmedSec.toFixed(1)}s of silence from the start, so generated speech starts on time.
+                </p>
+              ) : null}
+              {tooShort ? (
+                <p className="text-[12px] text-live">That clip is under 4 seconds — too short to clone reliably.</p>
+              ) : chosen.durationSec < 10 ? (
+                <p className="text-[12px] text-live">
+                  Under 10 seconds. The sound of the voice comes from the first 10, so a longer clip clones better.
+                </p>
+              ) : null}
+              {warnings.map((w) => (
+                <p key={w} className="flex gap-2 text-[12px] text-live">
+                  <IconAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {w}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-[12.5px] font-medium text-muted" htmlFor="vf-transcript">
             Transcript <span className="text-faint">— the exact words in the clip</span>
           </label>
           <Textarea
             id="vf-transcript"
+            lang={language}
             rows={3}
             value={transcript}
-            onChange={(e) => setTranscript(e.target.value)}
-            placeholder="Type exactly what is said in the clip."
+            onChange={(e) => changeTranscript(e.target.value)}
+            placeholder={guide.transcriptPlaceholder}
           />
+          {readingScript ? (
+            <p className="mt-1 text-[11.5px] text-faint">Filled in from the script. Edit it if you read something differently.</p>
+          ) : null}
         </div>
       </div>
 
       <div className="flex items-center gap-3 border-t border-line bg-surface2 px-5 py-3">
-        <p className="text-[12px] text-muted">
-          Stored once. Cached onto any backend the first time it&apos;s used.
-        </p>
+        <p className="text-[12px] text-muted">Stored once. Cached onto any backend the first time it&apos;s used.</p>
         <Button variant="primary" size="sm" className="ml-auto" disabled={!canSubmit} onClick={() => void submit()}>
           {uploading ? "Saving…" : "Add voice"}
         </Button>

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   STYLE_SECONDS,
+  arrangeRecording,
   buildReference,
   checkReference,
   speechBounds,
@@ -99,5 +100,36 @@ describe("buildReference with preferred clips", () => {
     expect([1, 3]).toContain(r.used[0]);
     expect(r.used.length).toBeGreaterThan(1);
     expect(r.durationSec).toBeGreaterThan(8);
+  });
+});
+
+describe("arrangeRecording", () => {
+  it("stretches a short pause so the silence spans the 6-second mark", () => {
+    // Read straight through: 0.8 s of lead-in, a 4 s line, a 0.6 s pause, the rest.
+    const rec = join(quiet(0.8), tone(4), quiet(0.6), tone(6));
+    const out = arrangeRecording(rec, SR)!;
+    expect(out.styleEndsAt).toBeGreaterThan(3.9);
+    expect(out.styleEndsAt).toBeLessThan(4.3);
+    expect(out.restStartsAt).toBeCloseTo(STYLE_SECONDS + 0.3, 1);
+    const check = checkReference(out.samples, SR);
+    expect(check.leadSec).toBeLessThan(0.1);
+    expect(check.warnings).toEqual([]);
+  });
+
+  it("shortens a long pause too", () => {
+    const out = arrangeRecording(join(tone(3.5), quiet(4), tone(5)), SR)!;
+    expect(out.restStartsAt).toBeCloseTo(STYLE_SECONDS + 0.3, 1);
+    expect(out.samples.length / SR).toBeCloseTo(STYLE_SECONDS + 0.3 + 5, 0);
+  });
+
+  it("picks the pause nearest 4.3 s when there are several", () => {
+    const out = arrangeRecording(join(tone(2), quiet(0.4), tone(2.2), quiet(0.5), tone(1), quiet(0.5), tone(4)), SR)!;
+    expect(out.styleEndsAt).toBeCloseTo(4.66, 1);
+  });
+
+  it("gives up when no pause falls in the window", () => {
+    expect(arrangeRecording(tone(12), SR)).toBeNull();
+    expect(arrangeRecording(join(tone(1.5), quiet(1), tone(8)), SR)).toBeNull();
+    expect(arrangeRecording(quiet(5), SR)).toBeNull();
   });
 });
