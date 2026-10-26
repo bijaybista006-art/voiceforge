@@ -6,7 +6,9 @@ name: Test backend
 # catches a syntax error or a bad import before anyone opens a notebook.
 on:
   push:
-    branches: [main]
+    # Also test branches: there is no Python here, so a backend change is
+    # checked on a branch before it reaches main and deploys.
+    branches: [main, "test/**"]
     paths:
       - "backend/**"
       - "modal/**"

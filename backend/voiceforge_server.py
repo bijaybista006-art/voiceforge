@@ -53,6 +53,9 @@ try:
         ne_trim_leading,
         ne_model_ending,
         ne_take_problem,
+        ne_mark_pauses,
+        ne_pace_factor,
+        ne_speech_rate,
         ne_plain_text,
         EngineUnavailable,
         DEFAULT_ENGINE,
@@ -88,6 +91,9 @@ except ImportError:  # pragma: no cover - notebook layout
         ne_trim_leading,
         ne_model_ending,
         ne_take_problem,
+        ne_mark_pauses,
+        ne_pace_factor,
+        ne_speech_rate,
         ne_plain_text,
         EngineUnavailable,
         DEFAULT_ENGINE,
@@ -880,7 +886,48 @@ def cache_voice(voice_id: str, audio_url: str, transcript: str = "", language: s
         data = data.mean(axis=1)
     sf.write(path, data, sr)
     VOICES[voice_id] = {"path": path, "transcript": (transcript or "").strip(), "language": language}
+    _NE_VOICE_RATE.pop(voice_id, None)
     return len(data) / sr
+
+
+_NE_VOICE_RATE: Dict[str, float] = {}
+
+
+def _ne_voice_rate(voice_id: str) -> float:
+    """How fast the voice's own recording speaks, in letters a second; 0 if unknown.
+
+    Measured once per voice from its reference clip and transcript, so every
+    take is brought to the speaker's own pace (ne_pace_factor) and a voice
+    recorded later gets its own pace with no setting to tune.
+    """
+    if voice_id in _NE_VOICE_RATE:
+        return _NE_VOICE_RATE[voice_id]
+    rate = 0.0
+    v = VOICES.get(voice_id) or {}
+    try:
+        if v.get("path") and v.get("transcript"):
+            data, sr = sf.read(v["path"], dtype="float32")
+            if getattr(data, "ndim", 1) > 1:
+                data = data.mean(axis=1)
+            rate = ne_speech_rate(data, sr, v["transcript"])
+    except Exception as e:  # noqa: BLE001
+        print(f"[pace] could not measure {voice_id}: {e}", flush=True)
+    _NE_VOICE_RATE[voice_id] = rate
+    print(f"[pace] {voice_id}: {rate:.1f} letters/s", flush=True)
+    return rate
+
+
+def _ne_finish(audio: np.ndarray, sr: int, text: str, voice_id: str, params: Dict[str, Any]):
+    """A finished Nepali take with its pauses set and brought to the voice's pace.
+
+    Pauses first (ne_mark_pauses), then speed: the rate is measured without
+    pauses, so the order does not change it. `pace` (the Nepali speed
+    setting) still applies on top, as a preference.
+    """
+    audio, pauses = ne_mark_pauses(audio, sr, text)
+    factor = ne_pace_factor(ne_speech_rate(audio, sr, text), _ne_voice_rate(voice_id))
+    audio = change_rate(audio, sr, ne_pace(params) * factor)
+    return audio, {"pace": ne_pace(params), "pace_match": round(factor, 3), **({"pauses": pauses} if pauses else {})}
 
 
 # ---------------------------------------------------------------------------
@@ -1427,14 +1474,15 @@ def _run_job(job: Dict[str, Any]) -> None:
                         },
                         seed=int(params.get("seed", 0)) + i,
                     )
-                    # Pace is applied after the take is finished and judged, so
-                    # the length checks above always see the model's own speed.
-                    audio = change_rate(audio, sr, ne_pace(params))
+                    # Pace and pauses are set after the take is finished and
+                    # judged, so the length checks above always see the model's
+                    # own speed.
+                    audio, finish = _ne_finish(audio, sr, text, job["voice_id"], params)
                     rendered.append(audio)
                     diag.append(
                         {
                             **_LAST_GEN,
-                            "pace": ne_pace(params),
+                            **finish,
                             "ending_frames": _NE_ENDING.get("frames") or NE_TAIL_FRAMES,
                             "raw_audio": _LAST_GEN.get("audio"),
                             "audio": round(len(audio) / max(1, sr), 2),
@@ -1783,7 +1831,7 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
                         seed=int(p.get("seed", 0)),
                     )
                     _BUSY = False
-                audio = change_rate(audio, sr, ne_pace(p))
+                audio, _finish = _ne_finish(audio, sr, p["text"], p["voice_id"], p)
                 return {
                     "audio_b64": _wav_b64(audio, sr),
                     "sample_rate": sr,

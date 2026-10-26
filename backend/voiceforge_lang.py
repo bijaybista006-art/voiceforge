@@ -110,24 +110,70 @@ _NE_DIGITS = {
 }
 
 
-def ne_spell_number(token: str) -> str:
-    """Read a number digit by digit, speaking the decimal point.
+# 0-99 each have their own word in Nepali; nothing about them is regular.
+_NE_0_99 = (
+    "सुन्ना एक दुई तीन चार पाँच छ सात आठ नौ "
+    "दश एघार बाह्र तेह्र चौध पन्ध्र सोह्र सत्र अठार उन्नाइस "
+    "बीस एक्काइस बाइस तेइस चौबीस पच्चीस छब्बीस सत्ताइस अठ्ठाइस उनन्तीस "
+    "तीस एकतीस बत्तीस तेत्तीस चौंतीस पैंतीस छत्तीस सैंतीस अठतीस उनन्चालीस "
+    "चालीस एकचालीस बयालीस त्रियालीस चवालीस पैंतालीस छयालीस सत्चालीस अठचालीस उनन्चास "
+    "पचास एकाउन्न बाउन्न त्रिपन्न चवन्न पचपन्न छपन्न सन्ताउन्न अन्ठाउन्न उनन्साठी "
+    "साठी एकसट्ठी बैसट्ठी त्रिसट्ठी चौंसट्ठी पैंसट्ठी छयसट्ठी सतसट्ठी अठसट्ठी उनन्सत्तरी "
+    "सत्तरी एकहत्तर बहत्तर त्रिहत्तर चौहत्तर पचहत्तर छयहत्तर सतहत्तर अठहत्तर उनासी "
+    "असी एकासी बयासी त्रियासी चौरासी पचासी छयासी सतासी अठासी उनान्नब्बे "
+    "नब्बे एकानब्बे बयानब्बे त्रियानब्बे चौरानब्बे पन्चानब्बे छयानब्बे सन्तानब्बे अन्ठानब्बे उनान्सय"
+).split()
+# Nepali groups by hundreds, then pairs: 1,23,45,67,890 is एक अर्ब तेइस करोड ...
+_NE_SCALES = ((10**9, "अर्ब"), (10**7, "करोड"), (10**5, "लाख"), (1000, "हजार"), (100, "सय"))
+_DEVA_TO_ASCII = str.maketrans("०१२३४५६७८९", "0123456789")
 
-    Deliberately not a full Nepali number grammar: digits plus "दशमलव" is
-    always understandable, whereas a half-right lakh/crore rule is not, and a
-    TTS model cannot ask what you meant.
+
+def ne_number_words(n: int) -> str:
+    """A whole number as it is said in Nepali: 1925 is उन्नाइस सय पच्चीस.
+
+    Years and amounts from 1100 to 1999 are said in hundreds (उन्नाइस सय
+    पच्चीस, पन्ध्र सय), the way Nepali speakers read them; everything else
+    uses हजार, लाख and करोड. Read digit by digit, the model said "1925" as
+    "एक नौ दुई पाँच" (Oct 2026).
     """
+    if n < 100:
+        return _NE_0_99[n]
+    if 1100 <= n <= 1999:
+        rest = n % 100
+        return f"{_NE_0_99[n // 100]} सय" + (f" {_NE_0_99[rest]}" if rest else "")
     out: List[str] = []
-    for ch in token:
-        if ch in _NE_DIGITS:
-            out.append(_NE_DIGITS[ch])
-        elif ch == ".":
-            out.append("दशमलव")
-        elif ch == ",":
-            continue
-        else:
-            out.append(ch)
-    return " ".join(x for x in out if x)
+    for value, word in _NE_SCALES:
+        if n >= value:
+            out.append(f"{ne_number_words(n // value)} {word}")
+            n %= value
+    if n:
+        out.append(_NE_0_99[n])
+    return " ".join(out)
+
+
+def ne_spell_number(token: str) -> str:
+    """Say a number the way a person reads it.
+
+    Whole numbers are said as numbers (see ne_number_words), with the
+    thousands commas ignored. What is not a quantity is read digit by digit:
+    anything starting with 0 (a phone number, a code) or longer than 12
+    digits. After a decimal point the digits are read one by one, as people
+    do: 3.14 is तीन दशमलव एक चार.
+    """
+    t = token.translate(_DEVA_TO_ASCII).rstrip(".,")
+    trail = token[len(t):]
+    whole, dot, frac = t.partition(".")
+    whole = whole.replace(",", "")
+    if not whole.isdigit() or (dot and not frac.isdigit()):
+        # Not one number (a version like 1.2.3): read it as it is written.
+        return " ".join(_NE_DIGITS.get(ch, "दशमलव") for ch in t if ch != ",") + trail
+    if (len(whole) > 1 and whole.startswith("0")) or len(whole) > 12:
+        words = " ".join(_NE_DIGITS[ch] for ch in whole)
+    else:
+        words = ne_number_words(int(whole))
+    if dot and frac.isdigit():
+        words += " दशमलव " + " ".join(_NE_DIGITS[ch] for ch in frac)
+    return words + trail
 
 
 def ne_expand_digits(text: str) -> str:
@@ -394,6 +440,178 @@ def ne_take_problem(audio, sr: int, text: str) -> str:
     if longest * frame_s > limit:
         return f"a {longest * frame_s:.1f} s gap inside the speech"
     return ""
+
+
+# --- pace and pauses, the same for every voice ------------------------------
+#
+# Each sentence is its own take, and the model picks its own speed and its own
+# pauses every time: one sentence came out quick, the next slow, and commas
+# got a pause or none at random (Oct 2026). It was trained on unpunctuated
+# text, so it cannot learn punctuation from a voice clip. These set both after
+# the take, from the text and the voice's own recording, so they hold for any
+# voice recorded later.
+
+# A gap this long or more is a pause, not the silence inside a word.
+NE_PAUSE_MIN_SEC = 0.06
+# Pauses at least this long are left out when measuring how fast someone speaks.
+NE_RATE_PAUSE_SEC = 0.2
+NE_COMMA_PAUSE_SEC = 0.28
+# A full stop inside one take: two short sentences voiced together.
+NE_STOP_PAUSE_SEC = 0.75
+# A pause the text has no mark for is shortened to this.
+NE_STRAY_PAUSE_SEC = 0.15
+NE_STRAY_PAUSE_OVER_SEC = 0.3
+# How far a take may be sped up or slowed down to match the voice.
+NE_PACE_MIN = 0.85
+NE_PACE_MAX = 1.2
+# Speaking rates outside this (letters a second) are a mismeasurement.
+NE_RATE_RANGE = (8.0, 24.0)
+
+_NE_LETTER = re.compile(r"[A-Za-z0-9ऀ-ॣ०-ॿ]")
+_NE_COMMA = ",;:،"
+_NE_STOP = "।॥?!."
+
+
+def ne_letters(text: str) -> int:
+    """Letters and vowel signs: what takes time to say. Spaces and marks don't."""
+    return len(_NE_LETTER.findall(text or ""))
+
+
+def _sound_frames(audio, sr: int):
+    """20 ms frames with sound in them (within 30 dB of the loudest), and the frame length."""
+    rms, n = _frame_rms(_np.asarray(audio, dtype=_np.float32), sr)
+    if len(rms) == 0 or float(rms.max()) <= 0:
+        return None, n
+    return rms >= float(rms.max()) * 10 ** (-30 / 20), n
+
+
+def _gaps(on, min_frames: int):
+    """(first, end) frame of every silent run between the first and last sound."""
+    idx = _np.flatnonzero(on)
+    if len(idx) == 0:
+        return []
+    out, start = [], None
+    for i in range(int(idx[0]), int(idx[-1]) + 1):
+        if not on[i] and start is None:
+            start = i
+        elif on[i] and start is not None:
+            if i - start >= min_frames:
+                out.append((start, i))
+            start = None
+    return out
+
+
+def ne_speech_rate(audio, sr: int, text: str) -> float:
+    """Letters a second while speaking, pauses left out; 0 when it can't be told.
+
+    Pauses are not counted, so a sentence with a long comma pause is not
+    "slow" and a sentence said in one breath is not "fast".
+    """
+    if _np is None or audio is None or len(audio) == 0:
+        return 0.0
+    on, n = _sound_frames(audio, sr)
+    letters = ne_letters(text)
+    if on is None or letters < 8:
+        return 0.0
+    frame = n / sr
+    idx = _np.flatnonzero(on)
+    span = int(idx[-1]) - int(idx[0]) + 1
+    paused = sum(b - a for a, b in _gaps(on, max(1, round(NE_RATE_PAUSE_SEC / frame))))
+    seconds = (span - paused) * frame
+    rate = letters / seconds if seconds > 0 else 0.0
+    return rate if NE_RATE_RANGE[0] <= rate <= NE_RATE_RANGE[1] else 0.0
+
+
+def ne_pace_factor(take_rate: float, voice_rate: float) -> float:
+    """How much to speed a take up (>1) or slow it down so it matches the voice."""
+    if take_rate <= 0 or voice_rate <= 0:
+        return 1.0
+    return min(NE_PACE_MAX, max(NE_PACE_MIN, voice_rate / take_rate))
+
+
+def _set_gap(audio, a: int, b: int, seconds: float, sr: int):
+    """The stretch audio[a:b] replaced by silence of the given length.
+
+    The first and last 30 ms are kept: a word fades into a pause and out of it.
+    """
+    keep = min(int(0.03 * sr), (b - a) // 2)
+    total = max(2 * keep, int(seconds * sr))
+    quiet = _np.zeros(total - 2 * keep, dtype=_np.float32)
+    return _np.concatenate([audio[a : a + keep], quiet, audio[b - keep : b]])
+
+
+def ne_mark_pauses(audio, sr: int, text: str):
+    """Give every comma a short pause and every inner full stop a long one.
+
+    Each mark's place in the speech is estimated from how many letters come
+    before it, counting speaking time only. The silent gap nearest that place
+    (within an eighth of the speech) becomes the pause for it. A mark with no
+    gap near it is left alone: cutting into a word to make one sounds worse
+    than no pause. Long pauses the text has no mark for are shortened.
+    Returns the audio and a short note of what changed.
+    """
+    if _np is None or audio is None or len(audio) == 0:
+        return audio, ""
+    audio = _np.asarray(audio, dtype=_np.float32)
+    on, n = _sound_frames(audio, sr)
+    total = ne_letters(text)
+    if on is None or total < 8:
+        return audio, ""
+    frame = n / sr
+    gaps = _gaps(on, max(1, round(NE_PAUSE_MIN_SEC / frame)))
+    if not gaps:
+        return audio, ""
+    # Speaking time (frames with sound) before each gap.
+    spoken = _np.cumsum(on.astype(_np.int64))
+    speech_frames = int(spoken[-1])
+    at = [int(spoken[a]) for a, _ in gaps]
+
+    # Marks inside the text, with the share of letters before each.
+    marks = []
+    seen = 0
+    body = (text or "").rstrip().rstrip(_NE_STOP + _NE_COMMA + " ")
+    for ch in body:
+        if _NE_LETTER.match(ch):
+            seen += 1
+        elif ch in _NE_COMMA or ch in _NE_STOP:
+            if seen and (not marks or marks[-1][0] != seen):
+                marks.append((seen, NE_COMMA_PAUSE_SEC if ch in _NE_COMMA else NE_STOP_PAUSE_SEC))
+            elif marks and ch in _NE_STOP:
+                marks[-1] = (seen, NE_STOP_PAUSE_SEC)
+
+    target = {}
+    next_gap = 0
+    window = speech_frames / 8 + 2
+    for letters_before, seconds in marks:
+        want = speech_frames * letters_before / total
+        best = None
+        for g in range(next_gap, len(gaps)):
+            d = abs(at[g] - want)
+            if d <= window and (best is None or d < best[0]):
+                best = (d, g)
+        if best is not None:
+            target[best[1]] = seconds
+            next_gap = best[1] + 1
+
+    out, cursor, notes = [], 0, []
+    for g, (a, b) in enumerate(gaps):
+        length = (b - a) * frame
+        if g in target:
+            seconds = target[g]
+        elif length > NE_STRAY_PAUSE_OVER_SEC:
+            seconds = NE_STRAY_PAUSE_SEC
+        else:
+            continue
+        if abs(seconds - length) < 0.04:
+            continue
+        out.append(audio[cursor : a * n])
+        out.append(_set_gap(audio, a * n, b * n, seconds, sr))
+        cursor = b * n
+        notes.append(f"{length:.2f}->{seconds:.2f}")
+    if not out:
+        return audio, ""
+    out.append(audio[cursor:])
+    return _np.concatenate(out), f"{len(target)}/{len(marks)} marks; " + " ".join(notes)
 
 
 def ne_plain_text(text: str) -> str:

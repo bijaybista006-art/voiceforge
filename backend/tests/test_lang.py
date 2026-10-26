@@ -30,6 +30,10 @@ from backend.voiceforge_lang import (  # noqa: E402
     ne_expand_digits,
     ne_prepare,
     ne_spell_number,
+    ne_letters,
+    ne_mark_pauses,
+    ne_pace_factor,
+    ne_speech_rate,
     plan_engine,
     strip_state_prefixes,
 )
@@ -96,11 +100,34 @@ class TestNepaliFallback:
 
 
 class TestNepaliNumbers:
-    def test_digits_become_spoken_words(self):
-        assert ne_spell_number("25") == "दुई पाँच"
+    def test_numbers_are_said_as_numbers(self):
+        assert ne_spell_number("25") == "पच्चीस"
+        assert ne_spell_number("7") == "सात"
+        assert ne_spell_number("100") == "एक सय"
+        assert ne_spell_number("250") == "दुई सय पचास"
+        assert ne_spell_number("5000") == "पाँच हजार"
+        assert ne_spell_number("150000") == "एक लाख पचास हजार"
+        assert ne_spell_number("1,25,00,000") == "एक करोड पच्चीस लाख"
+
+    def test_years_are_said_in_hundreds(self):
+        # The bug: "1925" came out as "एक नौ दुई पाँच".
+        assert ne_spell_number("1925") == "उन्नाइस सय पच्चीस"
+        assert ne_spell_number("1900") == "उन्नाइस सय"
+        assert ne_spell_number("1500") == "पन्ध्र सय"
+        assert ne_spell_number("2026") == "दुई हजार छब्बीस"
+        assert ne_spell_number("२०८२") == "दुई हजार बयासी"
+
+    def test_codes_and_phone_numbers_stay_digit_by_digit(self):
+        assert ne_spell_number("0123") == "सुन्ना एक दुई तीन"
+        assert ne_spell_number("9841234567123") == " ".join(["नौ", "आठ", "चार", "एक", "दुई", "तीन", "चार", "पाँच", "छ", "सात", "एक", "दुई", "तीन"])
+
+    def test_a_full_stop_after_a_number_is_kept(self):
+        assert ne_expand_digits("सन् 1925।") == "सन् उन्नाइस सय पच्चीस।"
+        assert ne_expand_digits("1925.") == "उन्नाइस सय पच्चीस."
 
     def test_a_decimal_point_is_spoken(self):
-        assert "दशमलव" in ne_spell_number("2.5")
+        assert ne_spell_number("2.5") == "दुई दशमलव पाँच"
+        assert ne_spell_number("3.14") == "तीन दशमलव एक चार"
 
     def test_thousands_separators_are_dropped(self):
         assert "," not in ne_expand_digits("1,000")
@@ -460,3 +487,72 @@ class TestEndingFrames:
         assert ne_ending_frames({"ending_frames": 6}) == 6
         assert ne_ending_frames({"ending_frames": 1}) == 3
         assert ne_ending_frames({"ending_frames": 40}) == 12
+
+
+class TestNepaliPaceAndPauses:
+    """Same pace and pauses for every take, whatever the model chose."""
+
+    SR = 24000
+
+    @classmethod
+    def tone(cls, seconds):
+        np = pytest.importorskip("numpy")
+        return (0.5 * np.sin(2 * np.pi * 220 * np.arange(int(seconds * cls.SR)) / cls.SR)).astype(np.float32)
+
+    @classmethod
+    def quiet(cls, seconds):
+        np = pytest.importorskip("numpy")
+        return np.zeros(int(seconds * cls.SR), dtype=np.float32)
+
+    @classmethod
+    def join(cls, *parts):
+        np = pytest.importorskip("numpy")
+        return np.concatenate(parts)
+
+    def test_letters_leave_out_spaces_and_marks(self):
+        assert ne_letters("आज हामी, अनलाइन।") == ne_letters("आजहामीअनलाइन")
+        assert ne_letters("A b") == 2
+
+    def test_speech_rate_leaves_out_pauses(self):
+        text = "क" * 30
+        with_pause = self.join(self.tone(2), self.quiet(0.5), self.tone(1))
+        assert ne_speech_rate(with_pause, self.SR, text) == pytest.approx(10, rel=0.05)
+        assert ne_speech_rate(self.tone(3), self.SR, text) == pytest.approx(10, rel=0.05)
+
+    def test_speech_rate_refuses_what_it_cannot_measure(self):
+        assert ne_speech_rate(self.tone(3), self.SR, "क") == 0
+        assert ne_speech_rate(self.quiet(3), self.SR, "क" * 30) == 0
+
+    def test_pace_factor_matches_the_voice_within_limits(self):
+        assert ne_pace_factor(10, 12) == pytest.approx(1.2)
+        assert ne_pace_factor(12, 11) == pytest.approx(11 / 12)
+        assert ne_pace_factor(20, 10) == 0.85
+        assert ne_pace_factor(0, 10) == 1.0
+        assert ne_pace_factor(10, 0) == 1.0
+
+    def test_a_comma_gets_a_short_pause(self):
+        # 10 letters, a comma, 10 letters; the model left only 80 ms there.
+        text = "कखगघङचछजझञ, टठडढणतथदधन"
+        take = self.join(self.tone(1), self.quiet(0.08), self.tone(1))
+        out, note = ne_mark_pauses(take, self.SR, text)
+        assert len(out) / self.SR == pytest.approx(2 + 0.28, abs=0.03)
+        assert "1/1 marks" in note
+
+    def test_a_full_stop_inside_a_take_gets_a_long_pause(self):
+        text = "कखगघङचछजझञ। टठडढणतथदधन।"
+        take = self.join(self.tone(1), self.quiet(0.1), self.tone(1))
+        out, _ = ne_mark_pauses(take, self.SR, text)
+        assert len(out) / self.SR == pytest.approx(2 + 0.75, abs=0.03)
+
+    def test_a_pause_with_no_mark_is_shortened(self):
+        text = "कखगघङचछजझञटठडढणतथदधन"
+        take = self.join(self.tone(1), self.quiet(0.6), self.tone(1))
+        out, _ = ne_mark_pauses(take, self.SR, text)
+        assert len(out) / self.SR == pytest.approx(2 + 0.15, abs=0.03)
+
+    def test_a_mark_far_from_any_gap_is_left_alone(self):
+        # The comma is near the start, the only gap near the end.
+        text = "कख, गघङचछजझञटठडढणतथदधन"
+        take = self.join(self.tone(1.8), self.quiet(0.1), self.tone(0.2))
+        out, _ = ne_mark_pauses(take, self.SR, text)
+        assert len(out) == len(take)
