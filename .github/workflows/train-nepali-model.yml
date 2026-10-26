@@ -22,7 +22,7 @@ on:
       voice:
         description: "Voice id used as the reference while training (same one used for generating)"
         required: true
-        default: "bijay-nepali-final-3d37742e"
+        default: "bijay-nepali-53a54260"
       base_file:
         description: "Checkpoint to continue from"
         required: true
