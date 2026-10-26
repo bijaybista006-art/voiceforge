@@ -121,6 +121,15 @@ class TestNepaliNumbers:
         assert ne_spell_number("0123") == "सुन्ना एक दुई तीन"
         assert ne_spell_number("9841234567123") == " ".join(["नौ", "आठ", "चार", "एक", "दुई", "तीन", "चार", "पाँच", "छ", "सात", "एक", "दुई", "तीन"])
 
+    def test_clock_times_are_said_as_times(self):
+        assert ne_expand_digits("बिहान 7:30 मा") == "बिहान सात बजेर तीस मिनेट मा"
+        assert ne_expand_digits("10:00") == "दश बजे"
+        assert ne_expand_digits("१०:१५") == "दश बजेर पन्ध्र मिनेट"
+
+    def test_percent_is_said(self):
+        assert ne_expand_digits("75% मानिस") == "पचहत्तर प्रतिशत मानिस"
+        assert ne_expand_digits("2.5 %") == "दुई दशमलव पाँच प्रतिशत"
+
     def test_a_full_stop_after_a_number_is_kept(self):
         assert ne_expand_digits("सन् 1925।") == "सन् उन्नाइस सय पच्चीस।"
         assert ne_expand_digits("1925.") == "उन्नाइस सय पच्चीस."

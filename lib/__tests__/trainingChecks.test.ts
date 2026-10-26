@@ -128,7 +128,7 @@ describe("training prompts", () => {
   });
 
   it("then moves through the rest in order, skipping what is recorded", () => {
-    const priority = recordingOrder("ne").filter((p) => /^(Voice reference|Important words|Long passage)/.test(p.note ?? "") || ["ne-028", "ne-079", "ne-082"].includes(p.id));
+    const priority = recordingOrder("ne").filter((p) => /^(Voice reference|Important words|Long passage|Every kind of word)/.test(p.note ?? "") || ["ne-028", "ne-079", "ne-082"].includes(p.id));
     const recorded = new Set([...priority.map((p) => p.id), "ne-001", "ne-002"]);
     expect(nextPrompt("ne", recorded)?.id).toBe("ne-003");
     expect(nextPrompt("ne", recorded, "ne-003")?.id).toBe("ne-004");
@@ -138,6 +138,15 @@ describe("training prompts", () => {
     expect(TRAINING_PROMPTS.ne.every((p) => p.note)).toBe(true);
     expect(TRAINING_PROMPTS.ne.find((p) => p.id === "ne-028")?.text).toBe("धन्यवाद, अर्को भिडियोमा भेटौंला।");
     expect(TRAINING_PROMPTS.ne.find((p) => p.id === "ne-079")?.text).toBe("अर्को भिडियोमा फेरि भेटौंला, नमस्ते।");
+  });
+
+  it("covers every Nepali letter and common letter cluster", () => {
+    const all = TRAINING_PROMPTS.ne.map((p) => p.text).join(" ");
+    const letters = "अ आ इ ई उ ऊ ऋ ए ऐ ओ औ क ख ग घ ङ च छ ज झ ञ ट ठ ड ढ ण त थ द ध न प फ ब भ म य र ल व श ष स ह क्ष त्र ज्ञ ा ि ी ु ू ृ े ै ो ौ ं ँ ः ्";
+    const clusters =
+      "क्त क्य क्र ख्य ग्य ग्र ङ्क ङ्ख ङ्ग ङ्घ च्च च्छ ज्ज ज्य ञ्च ञ्ज ट्ट ट्र ड्ड ड्र ण्ड त्त त्य त्व द्ध द्य द्व द्र ध्य ध्व न्त न्द न्ध न्न न्य प्त प्र प्ल ब्ब ब्र भ्र म्ब म्म म्र य्य र्क र्ग र्च र्ज र्त र्थ र्द र्ध र्न र्प र्म र्य र्व र्श र्ष र्स ल्ल ल्य व्य श्च श्र श्व ष्ट ष्ठ ष्ण स्क स्त स्थ स्न स्प स्म स्य स्व ह्म ह्य ह्र ह्ल";
+    const missing = [...letters.split(" "), ...clusters.split(" ")].filter((x) => !all.includes(x));
+    expect(missing).toEqual([]);
   });
 
   it("returns nothing once every sentence is recorded", () => {

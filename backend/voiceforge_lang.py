@@ -176,12 +176,26 @@ def ne_spell_number(token: str) -> str:
     return words + trail
 
 
+def _ne_time(m: "re.Match[str]") -> str:
+    hour = ne_spell_number(m.group(1))
+    minutes = int(m.group(2).translate(_DEVA_TO_ASCII))
+    return f"{hour} बजे" if minutes == 0 else f"{hour} बजेर {ne_number_words(minutes)} मिनेट"
+
+
 def ne_expand_digits(text: str) -> str:
-    """Replace every run of digits — ASCII or Devanagari — with spoken words."""
+    """Replace every run of digits — ASCII or Devanagari — with spoken words.
+
+    Clock times and percentages first, as people say them: 7:30 is सात बजेर
+    तीस मिनेट and 75% is पचहत्तर प्रतिशत. Read as plain numbers they came out
+    as "सात:तीस" and "पचहत्तर" with the percent lost.
+    """
+    d = "[0-9०-९]"
+    text = re.sub(rf"(?<![0-9०-९:])({d}{{1,2}}):({d}{{2}})(?![0-9०-९:])", _ne_time, text or "")
+    text = re.sub(rf"({d}[0-9०-९.,]*)\s*%", lambda m: f"{ne_spell_number(m.group(1))} प्रतिशत", text)
     return re.sub(
         r"[0-9०-९][0-9०-९.,]*",
         lambda m: ne_spell_number(m.group(0)),
-        text or "",
+        text,
     )
 
 

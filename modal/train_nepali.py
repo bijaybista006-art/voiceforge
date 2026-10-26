@@ -78,7 +78,9 @@ def train(
     epochs: int = 6,
     lr: float = 1e-5,
     accum: int = 8,
-    exaggeration: float = 0.4,
+    # What live Nepali generation uses (lib/languageProfiles.ts), so the model
+    # is trained under the same conditioning it speaks with.
+    exaggeration: float = 0.65,
     holdout: float = 0.05,
     smoke: bool = False,
     push: bool = True,
@@ -108,6 +110,17 @@ def train(
     from chatterbox.mtl_tts import punc_norm  # noqa: E402
 
     t0 = time.time()
+    if version in ("", "auto"):
+        # The next free vN in the repo. Re-using a name would overwrite the
+        # live file under the same name, and a backend that already has that
+        # name loaded would keep speaking with the old weights.
+        import re as _re
+
+        from huggingface_hub import HfApi
+
+        taken = [int(m.group(1)) for f in HfApi(token=os.environ["HF_TOKEN"]).list_repo_files(repo)
+                 if (m := _re.fullmatch(r"v(\d+)\.safetensors", f))]
+        version = f"v{max(taken + [2]) + 1}"
     run_dir = os.path.join(RUNS_DIR, version)
     os.makedirs(run_dir, exist_ok=True)
     log_lines: list = []
@@ -378,7 +391,7 @@ def main(
     elif not result.get("saved"):
         print("RESULT: No improvement on held-out clips; nothing saved. The current model stays.")
     elif result.get("activated"):
-        print(f"RESULT: {version} trained ({result['minutes']} min of recordings) and switched on. "
+        print(f"RESULT: {result['version']} trained ({result['minutes']} min of recordings) and switched on. "
               f"Held-out loss {result['history'][0]['val']:.3f} -> {min(h['val'] for h in result['history']):.3f}.")
     else:
-        print(f"RESULT: {version} trained and saved, but not switched on (gain {result.get('gain', 0):.1%}). See the log.")
+        print(f"RESULT: {result['version']} trained and saved, but not switched on (gain {result.get('gain', 0):.1%}). See the log.")

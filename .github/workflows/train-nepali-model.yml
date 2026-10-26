@@ -1,9 +1,10 @@
 name: Train Nepali model
 
 # Trains a new version of the owner's Nepali model on their Training data
-# recordings and pushes it to their Hugging Face repo. Nothing goes live:
-# the backends keep using VOICEFORGE_NE_FILE until the new version has been
-# evaluated against the current one. See modal/train_nepali.py and model/.
+# recordings and pushes it to their Hugging Face repo. Every run trains from
+# the original checkpoint on all recordings so far; if the result beats it on
+# held-out clips it switches itself on (Settings -> Nepali model). The run's
+# summary page says what happened. See modal/train_nepali.py and model/.
 #
 # Needs the MODAL_TOKEN_ID / MODAL_TOKEN_SECRET repo secrets, and HF_TOKEN
 # plus BACKEND_SECRET in the Modal secret `voiceforge-backend`.
@@ -11,9 +12,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Name of the new version (becomes <version>.safetensors in the repo)"
+        description: "Name of the new version; auto = the next free vN in the repo"
         required: true
-        default: "v3"
+        default: "auto"
       speaker:
         description: "Speaker name on the Training data page"
         required: true
@@ -21,7 +22,7 @@ on:
       voice:
         description: "Voice id used as the reference while training (same one used for generating)"
         required: true
-        default: "bijay-nepali-recovered-1fa71f59"
+        default: "bijay-nepali-final-3d37742e"
       base_file:
         description: "Checkpoint to continue from"
         required: true
