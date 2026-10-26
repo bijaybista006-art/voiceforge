@@ -30,6 +30,7 @@ from backend.voiceforge_lang import (  # noqa: E402
     ne_expand_digits,
     ne_prepare,
     ne_spell_number,
+    ne_split_mix,
     ne_letters,
     ne_mark_pauses,
     ne_pace_factor,
@@ -565,3 +566,17 @@ class TestNepaliPaceAndPauses:
         take = self.join(self.tone(1.8), self.quiet(0.1), self.tone(0.2))
         out, _ = ne_mark_pauses(take, self.SR, text)
         assert len(out) == len(take)
+
+
+class TestNepaliBlend:
+    def test_a_plain_file_is_used_as_it_is(self):
+        assert ne_split_mix("t3_mtl_nepali_merged.safetensors") == ("t3_mtl_nepali_merged.safetensors", None)
+
+    def test_a_share_blends_with_the_original(self):
+        assert ne_split_mix("t3_mtl_nepali_final.safetensors@0.6") == ("t3_mtl_nepali_final.safetensors", 0.6)
+        assert ne_split_mix("v4.safetensors@1") == ("v4.safetensors", 1.0)
+
+    def test_a_share_outside_the_range_is_refused(self):
+        for bad in ("x.safetensors@0", "x.safetensors@1.5", "x.safetensors@-0.2"):
+            with pytest.raises(ValueError):
+                ne_split_mix(bad)

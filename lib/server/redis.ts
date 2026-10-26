@@ -41,8 +41,12 @@ export function redisFailure(withinMs = 60_000): { at: number; message: string }
 
 export const SETTINGS_KEY = "vf:settings";
 
-/** A model file name in the owner's repo: letters, digits, dots, dashes, underscores. */
-export const NEPALI_MODEL_FILE = /^[\w.-]+\.safetensors$/;
+/**
+ * A model file name in the owner's repo (letters, digits, dots, dashes,
+ * underscores), optionally "@0.6": that share of it blended with the original
+ * multilingual model (backend ne_split_mix).
+ */
+export const NEPALI_MODEL_FILE = /^[\w.-]+\.safetensors(@(0?\.\d{1,2}|1(\.0+)?))?$/;
 
 export interface PlatformSettings {
   /** Days before generated audio is purged from Blob. */

@@ -84,6 +84,23 @@ def plan_engine(
     return chosen
 
 
+def ne_split_mix(file: str):
+    """Split "name.safetensors@0.6" into the file and its blend share.
+
+    The share is how much of the Nepali checkpoint to keep; the rest is the
+    original multilingual model the Nepali one was fine-tuned from (the one
+    English uses). None means the file as it is. Shares outside (0, 1] are
+    refused rather than guessed.
+    """
+    name, sep, share = (file or "").partition("@")
+    if not sep:
+        return name, None
+    mix = float(share)
+    if not 0 < mix <= 1:
+        raise ValueError(f"blend share must be in (0, 1]: {file}")
+    return name, mix
+
+
 def strip_state_prefixes(state: Dict[str, Any]) -> Dict[str, Any]:
     """Normalise checkpoint keys to what the target module expects.
 

@@ -73,6 +73,7 @@ try:
         splice,
         split_runs,
         strip_state_prefixes,
+        ne_split_mix,
         strip_tags,
         tone_settings,
         transliterate_latin,
@@ -111,6 +112,7 @@ except ImportError:  # pragma: no cover - notebook layout
         splice,
         split_runs,
         strip_state_prefixes,
+        ne_split_mix,
         strip_tags,
         tone_settings,
         transliterate_latin,
@@ -609,7 +611,8 @@ def _load_ne_model(repo: str = "", file: str = ""):
     fail looking for the rest.
     """
     repo = repo or NE_MODEL
-    file = file or NE_FILE
+    # "file@0.6" blends the checkpoint with the original model; see below.
+    file, mix = ne_split_mix(file or NE_FILE)
     if not repo:
         raise RuntimeError("no Nepali model configured (set VOICEFORGE_NE_MODEL)")
 
@@ -655,6 +658,32 @@ def _load_ne_model(repo: str = "", file: str = ""):
                 break
 
     state = strip_state_prefixes(state)
+    if mix is not None and mix < 1:
+        # The Nepali T3 was fine-tuned from this one, which still sits in
+        # model.t3 (from_pretrained), so the two can be mixed weight by weight.
+        # The original speaks English with a clean, natural delivery; the
+        # fine-tune learned Nepali from noisy, flat speech. Blending some of the
+        # original back keeps the Nepali and recovers some of the delivery.
+        # Rows the fine-tune added to the text vocabulary have no original to
+        # mix with and are kept as they are.
+        base = model.t3.state_dict()
+        mixed = 0
+        for k, v in state.items():
+            b = base.get(k)
+            if b is None or not torch.is_floating_point(v):
+                continue
+            b = b.detach().to("cpu", v.dtype)
+            if b.shape == v.shape:
+                state[k] = mix * v + (1 - mix) * b
+            elif b.dim() == v.dim() and b.shape[1:] == v.shape[1:] and v.shape[0] > b.shape[0]:
+                v = v.clone()
+                v[: b.shape[0]] = mix * v[: b.shape[0]] + (1 - mix) * b
+                state[k] = v
+            else:
+                continue
+            mixed += 1
+        del base
+        print(f"[engine] nepali T3: blended {mixed}/{len(state)} tensors at {mix:.2f} Nepali", flush=True)
     _grow_text_vocab(model.t3, state)
     missing, unexpected = model.t3.load_state_dict(state, strict=False)
     matched = len(state) - len(unexpected)
