@@ -16,17 +16,13 @@ on:
         required: true
         default: "auto"
       speaker:
-        description: "Speaker name on the Training data page"
+        description: "Speaker name on the Training data page, or all (every speaker: improves Nepali for every voice)"
         required: true
-        default: "Bijay"
-      voice:
-        description: "Voice id used as the reference while training (same one used for generating)"
-        required: true
-        default: "bijay-nepali-53a54260"
+        default: "all"
       base_file:
-        description: "Checkpoint to continue from"
+        description: "Where to start: chosen = the base picked in Settings; or a file (file@0.6 = a blend)"
         required: true
-        default: "t3_mtl_nepali_merged.safetensors"
+        default: "chosen"
       epochs:
         description: "Passes over the recordings"
         required: true
@@ -61,7 +57,6 @@ jobs:
           modal run modal/train_nepali.py \
             --version "${{ inputs.version }}" \
             --speaker "${{ inputs.speaker }}" \
-            --voice "${{ inputs.voice }}" \
             --base-file "${{ inputs.base_file }}" \
             --epochs "${{ inputs.epochs }}" $SMOKE 2>&1 | tee train.log
 

@@ -17,6 +17,7 @@ import { isTrainingLanguage } from "@/lib/trainingChecks";
 import { isValidBackendSecret } from "@/lib/server/backends";
 import { listSamples, speakerOf } from "@/lib/server/training";
 import { getVoice } from "@/lib/server/voices";
+import { getSettings } from "@/lib/server/redis";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,7 +38,10 @@ export async function GET(req: NextRequest) {
   }
 
   const samples = (await listSamples(language, speaker)).reverse();
+  const settings = await getSettings();
   return NextResponse.json({
+    // Where training starts: the base picked in Settings (a blend, usually).
+    base: language === "ne" ? settings.nepaliBaseModel || null : null,
     language,
     speaker: speaker ?? null,
     clips: samples.length,

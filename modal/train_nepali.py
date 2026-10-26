@@ -3,8 +3,8 @@ Train the owner's Nepali model: continue the T3 stage from the current
 Nepali checkpoint on the owner's own recordings, and push the result to
 their Hugging Face repo as a new version.
 
-    modal run modal/train_nepali.py --version v3 --speaker Bijay \
-        --voice <voice id> [--epochs 6] [--lr 1e-5] [--smoke]
+    modal run modal/train_nepali.py [--version auto] [--speaker all] \
+        [--base-file chosen] [--epochs 6] [--lr 1e-5] [--smoke]
 
 Started from GitHub → Actions → "Train Nepali model". Needs, in the Modal
 secret `voiceforge-backend`: HF_TOKEN (write access to the repo),
@@ -21,9 +21,12 @@ How it trains, and why (checked against chatterbox-tts 0.1.7's source):
   The community fine-tuning scripts it was compared with also mask the first
   150 speech tokens of every target, which would leave clips under 6 s with
   nothing to learn; that is not copied.
-- Conditioning is the owner's voice reference, built exactly as
-  ChatterboxMultilingualTTS.prepare_conditionals builds it for generation,
-  so the model learns in the situation it will be used in.
+- Every speaker's clips are used, and each clip is conditioned on another
+  clip of the same speaker, built exactly as prepare_conditionals builds a
+  voice for generation. The model learns Nepali for whatever voice it is
+  given, so a run improves every voice, including ones recorded later.
+- Every run starts from the base chosen in Settings (a blend of the Nepali
+  checkpoint and the original model, usually) on all recordings so far.
 - Text goes through the same steps as live Nepali text (digits spelled,
   the final "।" made a full stop, the library's punc_norm), then the Nepali
   tokenizer with the "ne" tag — training and generation see the same tokens.
@@ -72,9 +75,9 @@ MIN_GAIN = 0.01
 def train(
     version: str,
     speaker: str,
-    voice: str,
+    voice: str = "",  # no longer used: conditioning comes from the clips themselves
     repo: str = "waytobijay/voiceforge-nepali",
-    base_file: str = "t3_mtl_nepali_merged.safetensors",
+    base_file: str = "chosen",
     epochs: int = 6,
     lr: float = 1e-5,
     accum: int = 8,
@@ -132,7 +135,10 @@ def train(
 
     # ---- the clips ---------------------------------------------------------
     app_url = (os.environ.get("VOICEFORGE_APP_URL") or app_url).rstrip("/")
-    q = urllib.parse.urlencode({"language": "ne", "speaker": speaker, "voice": voice})
+    # "all": every speaker. More voices teach Nepali itself rather than one
+    # person's habits, so what is learned helps every voice.
+    who = "" if speaker.strip().lower() in ("", "all") else speaker
+    q = urllib.parse.urlencode({"language": "ne", **({"speaker": who} if who else {})})
     req = urllib.request.Request(
         f"{app_url}/api/internal/training/manifest?{q}",
         headers={"X-Backend-Secret": os.environ["BACKEND_SECRET"]},
@@ -141,7 +147,12 @@ def train(
         manifest = json.loads(r.read())
     clips = manifest["samples"]
     minutes = manifest["seconds"] / 60
-    log(f"{len(clips)} clips, {minutes:.1f} minutes, speaker {speaker!r}, voice {voice!r}")
+    if base_file in ("", "chosen"):
+        # The starting point picked in Settings (a blend, usually); every run
+        # starts there again on all recordings, so runs never drift.
+        base_file = manifest.get("base") or "t3_mtl_nepali_merged.safetensors"
+    speakers = sorted({c.get("speaker") or "Unnamed" for c in clips})
+    log(f"{len(clips)} clips, {minutes:.1f} minutes, speakers {speakers}, from {base_file}")
     if not clips:
         raise RuntimeError("no clips to train on")
     if minutes < MIN_MINUTES and not smoke:
@@ -164,21 +175,30 @@ def train(
     device = t3.device
     log(f"loaded {repo}:{base_file} (tag {ne_tag!r}) on {torch.cuda.get_device_name(0)}")
 
-    # Conditioning from the owner's voice reference, built like prepare_conditionals.
-    ref_path = "/tmp/reference.wav"
-    with open(ref_path, "wb") as f:
-        f.write(fetch(manifest["voice"]["audio_url"]))
-    model.prepare_conditionals(ref_path, exaggeration=exaggeration)
-    ref = model.conds.t3
-    speaker_emb = ref.speaker_emb.detach()
-    prompt_tokens = ref.cond_prompt_speech_tokens.detach()
+    # Conditioning: each clip is learned as if voiced from ANOTHER clip of the
+    # same speaker, built the way prepare_conditionals builds it (voice-encoder
+    # embedding, first 6 s as the speech prompt). Conditioning every clip on
+    # one fixed voice clip (before Oct 2026) taught the model how to speak
+    # given that clip; this teaches Nepali for any voice it is given.
+    plen = hp.speech_cond_prompt_len
 
-    def cond() -> T3Cond:
+    def conditioning_for(wav16k):
+        emb = torch.from_numpy(model.ve.embeds_from_wavs([wav16k], sample_rate=S3_SR))
+        with torch.no_grad():
+            prompt, _ = model.s3gen.tokenizer.forward([wav16k[: model.ENC_COND_LEN]], max_len=plen)
+        return emb.mean(axis=0, keepdim=True).to(device), torch.atleast_2d(prompt).to(device).long()
+
+    def cond(ex, rng=None) -> T3Cond:
+        # A different clip of the same speaker when there is one: at random
+        # while training, the next one while evaluating (stable numbers).
+        same = by_speaker.get(ex["speaker"], [ex])
+        others = [o for o in same if o is not ex] or [ex]
+        other = rng.choice(others) if rng else others[0]
         # Fresh each step: prepare_conditioning caches the prompt embedding on
         # the object, and a cached one would carry no gradient.
         return T3Cond(
-            speaker_emb=speaker_emb,
-            cond_prompt_speech_tokens=prompt_tokens,
+            speaker_emb=other["emb"],
+            cond_prompt_speech_tokens=other["prompt"],
             emotion_adv=exaggeration * torch.ones(1, 1, 1, device=device),
         ).to(device=device)
 
@@ -199,19 +219,31 @@ def train(
             speech = torch.atleast_2d(st)[0, : int(sl.reshape(-1)[0])].to(device).long()
             speech = F.pad(speech, (1, 0), value=hp.start_speech_token)
             speech = F.pad(speech, (0, 1), value=hp.stop_speech_token)
+            emb, prompt = conditioning_for(wav.astype(np.float32))
             # text_to_tokens returns (1, T) already; speech is (T,) until [None].
-            examples.append({"id": c["id"], "text": text_tokens_for(c["text"]), "speech": speech[None]})
+            examples.append({
+                "id": c["id"],
+                "speaker": c.get("speaker") or "Unnamed",
+                "text": text_tokens_for(c["text"]),
+                "speech": speech[None],
+                "emb": emb,
+                "prompt": prompt,
+            })
         except Exception as e:  # noqa: BLE001
             log(f"skipped {c['id']}: {e}")
+    by_speaker: dict = {}
+    for ex in examples:
+        by_speaker.setdefault(ex["speaker"], []).append(ex)
+    rng = random.Random(1)
     random.Random(0).shuffle(examples)
     n_val = max(1, int(len(examples) * holdout)) if len(examples) > 4 else 0
     val, trainset = examples[:n_val], examples[n_val:]
     log(f"{len(trainset)} training examples, {len(val)} held out")
 
     # ---- forward pass and loss --------------------------------------------------
-    def loss_for(ex) -> torch.Tensor:
+    def loss_for(ex, pick=None) -> torch.Tensor:
         text, speech = ex["text"], ex["speech"]
-        cond_emb = t3.prepare_conditioning(cond())
+        cond_emb = t3.prepare_conditioning(cond(ex, pick))
         te = t3.text_emb(text) + t3.text_pos_emb(text)
         se = t3.speech_emb(speech) + t3.speech_pos_emb(speech)
         embeds = torch.cat([cond_emb, te, se], dim=1)
@@ -261,7 +293,7 @@ def train(
         running, n = 0.0, 0
         for i, ex in enumerate(trainset):
             with torch.autocast("cuda", dtype=torch.bfloat16):
-                loss, speech_loss = loss_for(ex)
+                loss, speech_loss = loss_for(ex, rng)
             (loss / accum).backward()
             running += float(speech_loss)
             n += 1
@@ -365,9 +397,9 @@ def train(
 def main(
     version: str,
     speaker: str,
-    voice: str,
+    voice: str = "",  # no longer used: conditioning comes from the clips themselves
     repo: str = "waytobijay/voiceforge-nepali",
-    base_file: str = "t3_mtl_nepali_merged.safetensors",
+    base_file: str = "chosen",
     epochs: int = 6,
     lr: float = 1e-5,
     smoke: bool = False,

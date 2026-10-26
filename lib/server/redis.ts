@@ -71,6 +71,12 @@ export interface PlatformSettings {
   nepaliModel: string;
   /** What the current Nepali model is, in a line, for the Settings page. */
   nepaliModelNote: string;
+  /**
+   * Where every training run starts, in the same form as nepaliModel; ""
+   * for the backend's default. Kept apart from nepaliModel so each run starts
+   * from the chosen base on all recordings, not from the last run.
+   */
+  nepaliBaseModel: string;
 }
 
 export const DEFAULT_SETTINGS: PlatformSettings = {
@@ -89,6 +95,7 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   nepaliEnding: 12,
   nepaliModel: "",
   nepaliModelNote: "",
+  nepaliBaseModel: "",
 };
 
 export async function getSettings(): Promise<PlatformSettings> {

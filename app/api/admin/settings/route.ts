@@ -24,6 +24,7 @@ const schema = z.object({
   nepaliSpeed: z.number().min(0.75).max(1.25).optional(),
   nepaliEnding: z.number().int().min(3).max(12).optional(),
   nepaliModel: z.string().max(120).regex(NEPALI_MODEL_FILE).or(z.literal("")).optional(),
+  nepaliBaseModel: z.string().max(120).regex(NEPALI_MODEL_FILE).or(z.literal("")).optional(),
 });
 
 export async function GET() {
