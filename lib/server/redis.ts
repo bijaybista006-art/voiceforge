@@ -41,6 +41,9 @@ export function redisFailure(withinMs = 60_000): { at: number; message: string }
 
 export const SETTINGS_KEY = "vf:settings";
 
+/** A model file name in the owner's repo: letters, digits, dots, dashes, underscores. */
+export const NEPALI_MODEL_FILE = /^[\w.-]+\.safetensors$/;
+
 export interface PlatformSettings {
   /** Days before generated audio is purged from Blob. */
   retentionDays: number;
@@ -56,6 +59,14 @@ export interface PlatformSettings {
   nepaliSpeed: number;
   /** How long the last word of a Nepali sentence is held, in 40 ms frames. */
   nepaliEnding: number;
+  /**
+   * Which trained version of the Nepali model speaks: a file in the owner's
+   * model repo (e.g. "v3.safetensors"), or "" for the backend's default.
+   * A training run that beats the current model sets this itself.
+   */
+  nepaliModel: string;
+  /** What the current Nepali model is, in a line, for the Settings page. */
+  nepaliModelNote: string;
 }
 
 export const DEFAULT_SETTINGS: PlatformSettings = {
@@ -72,6 +83,8 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   // takes while the last word was still sounding; 12 (with 8 frames after
   // the closing punctuation) let it finish — measured Oct 2026.
   nepaliEnding: 12,
+  nepaliModel: "",
+  nepaliModelNote: "",
 };
 
 export async function getSettings(): Promise<PlatformSettings> {

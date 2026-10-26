@@ -4,7 +4,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { getSettings, isRedisConfigured, saveSettings } from "@/lib/server/redis";
+import { NEPALI_MODEL_FILE, getSettings, isRedisConfigured, saveSettings } from "@/lib/server/redis";
 
 export const runtime = "nodejs";
 
@@ -23,6 +23,7 @@ const schema = z.object({
     .optional(),
   nepaliSpeed: z.number().min(0.75).max(1.25).optional(),
   nepaliEnding: z.number().int().min(3).max(12).optional(),
+  nepaliModel: z.string().max(120).regex(NEPALI_MODEL_FILE).or(z.literal("")).optional(),
 });
 
 export async function GET() {

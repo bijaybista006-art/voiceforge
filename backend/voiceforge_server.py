@@ -1123,11 +1123,28 @@ def _ne_model_for(source: str):
     if repo != NE_MODEL and repo not in _NE_ALLOWED_REPOS:
         raise ValueError(f"ne_source repo not allowed: {repo}")
     key = f"{repo}:{file}"
+    # The model switched on in Settings arrives here with every job, so one
+    # that cannot load (a typo, a file not yet pushed) must not stop Nepali
+    # altogether: the default model speaks, and the job notes why.
+    if _NE_VARIANT.get("failed") == key:
+        _NE_GUARD["model_fallback"] = f"{key} could not load; used the default"
+        return MODELS["chatterbox-ne"]
     if _NE_VARIANT.get("key") != key:
         _NE_VARIANT.clear()
+        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        _NE_VARIANT["model"] = _load_ne_model(repo, file)
+        try:
+            _NE_VARIANT["model"] = _load_ne_model(repo, file)
+        except Exception as e:  # noqa: BLE001
+            print(f"[engine] nepali variant {key} failed: {e}; using the default", flush=True)
+            _NE_VARIANT.clear()
+            _NE_VARIANT["failed"] = key
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            _NE_GUARD["model_fallback"] = f"{key} could not load; used the default"
+            return MODELS["chatterbox-ne"]
         _NE_VARIANT["key"] = key
         print(f"[engine] nepali variant loaded: {key}", flush=True)
     return _NE_VARIANT["model"]
@@ -1181,6 +1198,8 @@ def _gen_ne_text(text: str, voice_id: str, **kw: Any) -> tuple:
         takes += k
         if _NE_GUARD.get("rerolled"):
             notes.append(f"re-voiced {len(_NE_GUARD['rerolled'])} take(s): " + "; ".join(_NE_GUARD["rerolled"]))
+        if _NE_GUARD.get("model_fallback") and _NE_GUARD["model_fallback"] not in notes:
+            notes.append(_NE_GUARD["model_fallback"])
         if not _NE_GUARD.get("failed_takes"):
             return audio
         smaller = ne_split_for_retry(piece) if allow_split else []

@@ -156,7 +156,11 @@ export async function gatewayGenerate(
     seed: input.seed ?? 0,
     language: synth.modelLanguage,
     ...(isNepali
-      ? { pace: settings?.nepaliSpeed ?? 1, ending_frames: settings?.nepaliEnding ?? 12 }
+      ? {
+          pace: settings?.nepaliSpeed ?? 1,
+          ending_frames: settings?.nepaliEnding ?? 12,
+          ...(settings?.nepaliModel ? { ne_source: settings.nepaliModel } : {}),
+        }
       : {}),
     engine: synth.engine,
     fallback: synth.fallback,

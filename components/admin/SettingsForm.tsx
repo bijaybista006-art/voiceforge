@@ -167,7 +167,7 @@ export function SettingsForm({
 
       <Field
         label="Nepali speed"
-        hint="How fast finished Nepali narration plays. Lower is slower and clearer; the pitch does not change."
+        hint="Every sentence is already matched to the voice's own speaking pace (measured from its recording). This is a preference on top: lower is slower; the pitch does not change."
       >
         <div className="flex items-center gap-3">
           <input
@@ -183,8 +183,36 @@ export function SettingsForm({
           <span className="font-mono text-[13px] tabular-nums text-ink">
             {Math.round((values.nepaliSpeed ?? 1) * 100)}%
           </span>
-          <span className="text-[12px] text-faint">100% is the model&apos;s own pace</span>
+          <span className="text-[12px] text-faint">100% is the voice&apos;s own pace</span>
         </div>
+      </Field>
+
+      <Field
+        label="Nepali model"
+        hint="Which trained version speaks Nepali. A training run that beats the current model switches itself on here; clear it to go back to the original model."
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <input
+            type="text"
+            value={values.nepaliModel ?? ""}
+            placeholder="original (t3_mtl_nepali_merged)"
+            onChange={(e) => patch({ nepaliModel: e.target.value.trim() })}
+            className="h-9 w-64 rounded-lg border border-line bg-white px-3 font-mono text-[12.5px] text-ink"
+            aria-label="Nepali model file"
+          />
+          {values.nepaliModel ? (
+            <button
+              type="button"
+              className="text-[12.5px] font-medium text-brand-600 hover:text-brand-700"
+              onClick={() => patch({ nepaliModel: "" })}
+            >
+              Use the original
+            </button>
+          ) : null}
+        </div>
+        {values.nepaliModel && values.nepaliModelNote ? (
+          <p className="mt-1.5 text-[12px] text-muted">{values.nepaliModelNote}</p>
+        ) : null}
       </Field>
 
       <Field

@@ -64,6 +64,8 @@ RUNS_DIR = "/runs"
 # refuse to train on too little audio, which would only teach it to repeat a
 # few sentences.
 MIN_MINUTES = 10.0
+# Held-out loss must drop by at least this much for a new version to go live.
+MIN_GAIN = 0.01
 
 
 @app.function(image=image, gpu="A10G", secrets=[secret], volumes={RUNS_DIR: runs}, timeout=4 * 3600)
@@ -309,7 +311,41 @@ def train(
             commit_message=f"{version}: training record",
         )
         log(f"pushed to https://huggingface.co/{repo}/blob/main/{out_file}")
-    return {**meta, "saved": True, "log": log_lines}
+
+    # ---- switch it on --------------------------------------------------------------
+    # A pushed version only exists because it beat the checkpoint it started
+    # from on held-out clips (best_state above). Before Oct 2026 it then waited
+    # for someone to switch it on by hand, and nobody knew to: two runs were
+    # done and the old model kept speaking. Now a clear gain switches it on
+    # (Settings -> Nepali model, where it can be switched back).
+    activated = False
+    before = history[0]["val"]
+    gain = (before - best["val"]) / before if before else 0.0
+    if push and gain >= MIN_GAIN:
+        body = json.dumps({
+            "file": out_file,
+            "version": version,
+            "before": round(before, 4),
+            "after": round(best["val"], 4),
+            "minutes": round(minutes, 1),
+            "clips": len(examples),
+        }).encode()
+        req = urllib.request.Request(
+            f"{app_url}/api/internal/training/activate",
+            data=body,
+            method="POST",
+            headers={"X-Backend-Secret": os.environ["BACKEND_SECRET"], "Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:  # noqa: S310 - our own app
+                r.read()
+            activated = True
+            log(f"switched on: every Nepali job now uses {out_file}")
+        except Exception as e:  # noqa: BLE001
+            log(f"trained and pushed, but switching it on failed ({e}); set it in Settings -> Nepali model")
+    elif push:
+        log(f"held-out gain {gain:.1%} is under {MIN_GAIN:.0%}; pushed but not switched on")
+    return {**meta, "saved": True, "activated": activated, "gain": round(gain, 4), "log": log_lines}
 
 
 @app.local_entrypoint()
@@ -335,3 +371,14 @@ def main(
         push=not smoke,
     )
     print({k: v for k, v in result.items() if k != "log"})
+    # One line the workflow copies to the run's summary page, so the outcome
+    # is plain without reading the log: a smoke run saves nothing.
+    if smoke:
+        print("RESULT: SMOKE TEST ONLY. The pipeline works; nothing was saved or switched on. Untick smoke for a real run.")
+    elif not result.get("saved"):
+        print("RESULT: No improvement on held-out clips; nothing saved. The current model stays.")
+    elif result.get("activated"):
+        print(f"RESULT: {version} trained ({result['minutes']} min of recordings) and switched on. "
+              f"Held-out loss {result['history'][0]['val']:.3f} -> {min(h['val'] for h in result['history']):.3f}.")
+    else:
+        print(f"RESULT: {version} trained and saved, but not switched on (gain {result.get('gain', 0):.1%}). See the log.")

@@ -128,7 +128,7 @@ describe("training prompts", () => {
   });
 
   it("then moves through the rest in order, skipping what is recorded", () => {
-    const priority = recordingOrder("ne").filter((p) => /^(Voice reference|Important words)/.test(p.note ?? "") || ["ne-028", "ne-079", "ne-082"].includes(p.id));
+    const priority = recordingOrder("ne").filter((p) => /^(Voice reference|Important words|Long passage)/.test(p.note ?? "") || ["ne-028", "ne-079", "ne-082"].includes(p.id));
     const recorded = new Set([...priority.map((p) => p.id), "ne-001", "ne-002"]);
     expect(nextPrompt("ne", recorded)?.id).toBe("ne-003");
     expect(nextPrompt("ne", recorded, "ne-003")?.id).toBe("ne-004");

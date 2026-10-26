@@ -178,8 +178,11 @@ export function VoicesManager() {
 // --- add ------------------------------------------------------------------
 
 const LANGUAGE_KEY = "vf:voice-language";
-/** Recording stops by itself here; only the first 10 seconds shape the voice. */
-const MAX_RECORD_SEC = 30;
+/**
+ * Recording stops by itself here. The sound of the voice is taken from its
+ * first 10 seconds, and the speaker's pace from the whole clip.
+ */
+const MAX_RECORD_SEC = 45;
 
 interface PreparedClip {
   /** What is saved: laid out for the model when that was possible. */

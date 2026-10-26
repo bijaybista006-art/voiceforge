@@ -54,7 +54,7 @@ jobs:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: |
-          set -e
+          set -eo pipefail
           SMOKE=""
           if [ "${{ inputs.smoke }}" = "true" ]; then SMOKE="--smoke"; fi
           modal run modal/train_nepali.py \
@@ -62,4 +62,10 @@ jobs:
             --speaker "${{ inputs.speaker }}" \
             --voice "${{ inputs.voice }}" \
             --base-file "${{ inputs.base_file }}" \
-            --epochs "${{ inputs.epochs }}" $SMOKE
+            --epochs "${{ inputs.epochs }}" $SMOKE 2>&1 | tee train.log
+
+      # The outcome on the run's summary page: whether this was only a smoke
+      # test, and whether the new version was switched on.
+      - name: Summary
+        if: always()
+        run: grep "^RESULT:" train.log >> "$GITHUB_STEP_SUMMARY" || echo "RESULT: the run stopped before training finished; see the Train step log." >> "$GITHUB_STEP_SUMMARY"
