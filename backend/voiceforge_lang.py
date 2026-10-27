@@ -9,6 +9,7 @@ module decides what that means for a job.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Callable, Dict, List, Optional
 
@@ -643,6 +644,155 @@ def ne_mark_pauses(audio, sr: int, text: str):
         return audio, ""
     out.append(audio[cursor:])
     return _np.concatenate(out), f"{len(target)}/{len(marks)} marks; " + " ".join(notes)
+
+
+# --- Did the take say the words? ----------------------------------------------
+#
+# The Nepali model is random: the same sentence comes out right on one seed and
+# with a word swallowed ("मोबाइलमा" -> "आल्मा") or a sound changed ("थियो" ->
+# "तियो") on another. The server listens to each take with Whisper and voices
+# it again when what was heard is too far from the text. Whisper spells Nepali
+# vowels loosely, so only the consonants are compared: the text's "skeleton".
+
+# Vowel signs, nasal marks, nukta, virama, dandas and digits; and anything
+# that isn't Devanagari (spaces, punctuation, Latin).
+_NE_NOT_SKELETON = re.compile(r"[ऀ-ः़ा-्ॢ-९]|[^ऀ-ॿ]")
+# A take is voiced again when more than this share of its consonants differ.
+# Calibrated live (Oct 2026) on takes the owner judged right.
+NE_HEARD_MAX_ERR = float(os.environ.get("VOICEFORGE_NE_HEARD_MAX_ERR", "0.25") or 0.25)
+# A wrong first word counts this much extra when choosing between takes:
+# a garbled start is what a listener notices first.
+NE_HEARD_FIRST_PENALTY = 0.15
+
+
+def ne_skeleton(text: str) -> str:
+    """The consonants and full vowels of a Nepali text, numbers spelled out."""
+    return _NE_NOT_SKELETON.sub("", ne_expand_digits(text or ""))
+
+
+def _edit_distance(a: str, b: str) -> int:
+    row = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        prev, row[0] = row[0], i
+        for j, cb in enumerate(b, 1):
+            prev, row[j] = row[j], min(row[j] + 1, row[j - 1] + 1, prev + (ca != cb))
+    return row[-1]
+
+
+def ne_heard_error(want: str, heard: str):
+    """(share of consonants wrong, first word right) for what Whisper heard."""
+    w, h = ne_skeleton(want), ne_skeleton(heard)
+    if not w:
+        return 0.0, True
+    err = min(1.0, _edit_distance(w, h) / len(w))
+    first = next((s for s in (ne_skeleton(x) for x in (want or "").split()) if s), "")
+    return err, _edit_distance(first, h[: len(first)]) <= 1
+
+
+def ne_heard_score(err: float, first_ok: bool) -> float:
+    """Lower is better; used to pick the clearest of several takes."""
+    return err + (0 if first_ok else NE_HEARD_FIRST_PENALTY)
+
+
+# --- Studio finish --------------------------------------------------------------
+#
+# The cloned Nepali voice came out boomy and hollow next to the owner's English
+# voice (Oct 2026, level per band relative to 1-2 kHz): +11 dB below 150 Hz
+# against +3, and -23 dB at 2-3 kHz, where words are made clear, against -7.
+# The English clone is the sound the owner calls clean and pleasant, so each
+# finished Nepali clip is evened out towards that balance, then gently
+# compressed so quiet syllables are not lost under loud ones.
+
+STUDIO_BANDS = (
+    (0, 150), (150, 300), (300, 600), (600, 1000), (1000, 2000), (2000, 3000),
+    (3000, 4000), (4000, 6000), (6000, 8000), (8000, 10000), (10000, 12000),
+)
+# Target level of each band, dB relative to 1-2 kHz: the English clone's own
+# balance, with a little more air above 4 kHz than it has.
+STUDIO_TARGET_DB = (3.0, 4.0, 6.0, 4.0, 0.0, -6.0, -11.0, -19.0, -25.0, -31.0, -40.0)
+# How far one band may be lifted or cut. A band the voice barely has is not
+# pulled up by more than this: it would bring up noise, not voice.
+STUDIO_MAX_BOOST_DB = 8.0
+STUDIO_MAX_CUT_DB = 10.0
+# Rumble below this is removed (a 4th-order slope).
+STUDIO_HIGHPASS_HZ = 70.0
+STUDIO_COMP_RATIO = 2.0
+# Compression starts this far below the loud part of the speech (90th percentile).
+STUDIO_COMP_BELOW_DB = 6.0
+
+
+def _band_levels(audio, sr: int):
+    """Average level of each STUDIO_BANDS band over the speech, dB rel. 1-2 kHz."""
+    n, hop = 2048, 1024
+    if len(audio) < n:
+        return None
+    frames = _np.lib.stride_tricks.sliding_window_view(audio, n)[::hop]
+    rms = _np.sqrt((frames**2).mean(axis=1))
+    speech = frames[rms >= rms.max() * 10 ** (-30 / 20)] if rms.max() > 0 else frames[:0]
+    if len(speech) == 0:
+        return None
+    power = (_np.abs(_np.fft.rfft(speech * _np.hanning(n), axis=1)) ** 2).mean(axis=0)
+    freqs = _np.fft.rfftfreq(n, 1 / sr)
+    levels = []
+    for lo, hi in STUDIO_BANDS:
+        sel = (freqs >= lo) & (freqs < min(hi, sr / 2))
+        levels.append(10 * _np.log10(power[sel].sum() + 1e-20) if sel.any() else None)
+    ref = levels[4]
+    return [None if v is None or ref is None else v - ref for v in levels]
+
+
+def studio_eq_gains(levels):
+    """dB to add per band, clamped; None where the band can't be measured."""
+    return [
+        None if lv is None else float(min(STUDIO_MAX_BOOST_DB, max(-STUDIO_MAX_CUT_DB, t - lv)))
+        for lv, t in zip(levels, STUDIO_TARGET_DB)
+    ]
+
+
+def _studio_eq(audio, sr: int, gains):
+    pad = int(0.1 * sr)
+    x = _np.concatenate([_np.zeros(pad, _np.float32), audio, _np.zeros(pad, _np.float32)])
+    spec = _np.fft.rfft(x)
+    f = _np.fft.rfftfreq(len(x), 1 / sr)
+    known = [(_np.sqrt(max(lo, 40) * hi), g) for (lo, hi), g in zip(STUDIO_BANDS, gains) if g is not None]
+    centres = _np.log([c for c, _ in known])
+    curve = _np.interp(_np.log(_np.maximum(f, 1.0)), centres, [g for _, g in known])
+    hp = (f / STUDIO_HIGHPASS_HZ) ** 4
+    spec *= 10 ** (curve / 20) * (hp / (1 + hp))
+    return _np.fft.irfft(spec, len(x))[pad : pad + len(audio)].astype(_np.float32)
+
+
+def _studio_compress(audio, sr: int):
+    rms, n = _frame_rms(audio, sr, 0.01)
+    if len(rms) == 0 or rms.max() <= 0:
+        return audio
+    level = 20 * _np.log10(rms + 1e-9)
+    loud = level[level > level.max() - 40]
+    threshold = float(_np.percentile(loud, 90)) - STUDIO_COMP_BELOW_DB
+    cut = _np.maximum(0.0, level - threshold) * (1 - 1 / STUDIO_COMP_RATIO)
+    # Smoothed over 50 ms so the gain moves like a voice, not a buzz.
+    k = 5
+    cut = _np.convolve(_np.pad(cut, (k // 2, k // 2), mode="edge"), _np.ones(k) / k, mode="valid")
+    gain = 10 ** (-cut / 20)
+    centres = (_np.arange(len(gain)) + 0.5) * n
+    return (audio * _np.interp(_np.arange(len(audio)), centres, gain)).astype(_np.float32)
+
+
+def studio_polish(audio, sr: int):
+    """A finished clip evened out towards the target balance and compressed.
+
+    Returns (audio, note); the note lists the dB applied per band. Loudness is
+    left to the peak normalising that every output gets afterwards.
+    """
+    if _np is None or audio is None or len(audio) < int(0.3 * sr):
+        return audio, ""
+    x = _np.asarray(audio, dtype=_np.float32)
+    levels = _band_levels(x, sr)
+    if levels is None or levels[4] is None:
+        return audio, ""
+    gains = studio_eq_gains(levels)
+    out = _studio_compress(_studio_eq(x, sr, gains), sr)
+    return out, "eq " + " ".join("-" if g is None else f"{g:+.0f}" for g in gains)
 
 
 def ne_plain_text(text: str) -> str:

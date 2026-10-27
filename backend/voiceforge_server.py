@@ -74,6 +74,10 @@ try:
         split_runs,
         strip_state_prefixes,
         ne_split_mix,
+        ne_heard_error,
+        ne_heard_score,
+        NE_HEARD_MAX_ERR,
+        studio_polish,
         strip_tags,
         tone_settings,
         transliterate_latin,
@@ -113,6 +117,10 @@ except ImportError:  # pragma: no cover - notebook layout
         split_runs,
         strip_state_prefixes,
         ne_split_mix,
+        ne_heard_error,
+        ne_heard_score,
+        NE_HEARD_MAX_ERR,
+        studio_polish,
         strip_tags,
         tone_settings,
         transliterate_latin,
@@ -1056,6 +1064,7 @@ def _gen_ne(
     """
     first = None
     best = None  # (seconds per character, audio) of takes that ended but sounded wrong
+    clear = None  # (heard score, audio) of whole takes Whisper heard words wrong in
     sr = 24000
     for take in range(3):
         audio, sr, _ = _generate_chunk(
@@ -1089,11 +1098,27 @@ def _gen_ne(
             # ne_take_problem; such a take is voiced again with a new seed.
             problem = ne_take_problem(audio, sr, text)
             if not problem:
-                return _fade_out(audio, sr, 0.08), sr, take + 1
+                audio = _fade_out(audio, sr, 0.08)
+                # Whole and the right length, but did it say the words? A
+                # swallowed or changed word is voiced again; if every take
+                # has one, the clearest is kept. See ne_heard_error.
+                heard = _ne_heard(audio, sr)
+                if heard is None:
+                    return audio, sr, take + 1
+                err, first_ok = ne_heard_error(text, heard)
+                _NE_GUARD.setdefault("heard", []).append(f"{err:.2f}{'' if first_ok else ' first word'}: {heard[:60]}")
+                if err <= NE_HEARD_MAX_ERR and first_ok:
+                    return audio, sr, take + 1
+                score = ne_heard_score(err, first_ok)
+                if clear is None or score < clear[0]:
+                    clear = (score, audio)
+                continue
             _NE_GUARD.setdefault("rerolled", []).append(problem)
             score = len(audio) / max(1, sr) / max(1, len(text))
             if best is None or score < best[0]:
                 best = (score, audio)
+    if clear is not None:
+        return clear[1], sr, 3
     if best is not None:
         # Every take ended but none sounded whole: keep the tightest one.
         return _fade_out(best[1], sr, 0.08), sr, 3
@@ -1103,6 +1128,59 @@ def _gen_ne(
 
 # What the guard had to do for the last piece of text, for the diagnostics.
 _NE_GUARD: Dict[str, Any] = {}
+
+# Whisper, to hear whether a Nepali take said its words (see _gen_ne). Loaded
+# on first use beside the TTS models, about 1.6 GB on the GPU. Set
+# VOICEFORGE_NE_ASR_MODEL="" to turn the check off on a backend; a request
+# turns it off with ne_check: false.
+NE_ASR_MODEL = os.environ.get("VOICEFORGE_NE_ASR_MODEL", "openai/whisper-large-v3-turbo").strip()
+_NE_ASR: Dict[str, Any] = {}
+
+
+def _ne_heard(audio: np.ndarray, sr: int) -> Optional[str]:
+    """What Whisper hears in a Nepali take, or None when it can't listen.
+
+    A backend where Whisper won't load voices as before, without the check,
+    rather than failing the job.
+    """
+    if not NE_ASR_MODEL or _NE_ASR.get("failed") or not _NE_REQUEST.get("check", True):
+        return None
+    try:
+        if "model" not in _NE_ASR:
+            from transformers import WhisperForConditionalGeneration, WhisperProcessor  # noqa: PLC0415
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            asr = WhisperForConditionalGeneration.from_pretrained(NE_ASR_MODEL).to(device)
+            asr = (asr.half() if device == "cuda" else asr).eval()
+            _NE_ASR.update(model=asr, processor=WhisperProcessor.from_pretrained(NE_ASR_MODEL), device=device)
+            print(f"[engine] Nepali listening check loaded: {NE_ASR_MODEL}", flush=True)
+        import librosa  # noqa: PLC0415
+
+        x = np.asarray(audio, dtype=np.float32)
+        if sr != 16000:
+            x = librosa.resample(x, orig_sr=sr, target_sr=16000)
+        asr, processor = _NE_ASR["model"], _NE_ASR["processor"]
+        features = processor(x, sampling_rate=16000, return_tensors="pt").input_features
+        features = features.to(_NE_ASR["device"], dtype=asr.dtype)
+        with torch.inference_mode():
+            ids = asr.generate(features, language="ne", task="transcribe", max_new_tokens=200)
+        return processor.batch_decode(ids, skip_special_tokens=True)[0].strip()
+    except Exception as e:  # noqa: BLE001
+        print(f"[engine] Nepali listening check unavailable: {e}", flush=True)
+        _NE_ASR.clear()
+        _NE_ASR["failed"] = str(e)[:200]
+        gc.collect()
+        return None
+
+
+def _studio(audio: np.ndarray, sr: int, params: Dict[str, Any], notes: List[str]) -> np.ndarray:
+    """A finished Nepali clip with the studio finish, unless the request says studio: false."""
+    if str(params.get("studio", "")).strip().lower() in ("0", "false", "off", "no"):
+        return audio
+    out, note = studio_polish(audio, sr)
+    if note:
+        notes.append(note)
+    return out
 # How many frames a Nepali take may spend on its last letter, when the request
 # says. Set per job from its params, under the GPU lock; 0 means the default.
 _NE_ENDING: Dict[str, int] = {"frames": 0}
@@ -1132,6 +1210,7 @@ _NE_VARIANT: Dict[str, Any] = {}
 def _set_ne_request(params: Dict[str, Any]) -> None:
     _NE_REQUEST["plain"] = str(params.get("ne_text") or "").lower() == "plain"
     _NE_REQUEST["source"] = str(params.get("ne_source") or "").strip()[:200]
+    _NE_REQUEST["check"] = str(params.get("ne_check", "")).strip().lower() not in ("0", "false", "off", "no")
     try:
         _NE_REQUEST["punct_frames"] = min(12, max(2, int(params.get("punct_frames") or 0))) if params.get("punct_frames") else 0
     except (TypeError, ValueError):
@@ -1227,6 +1306,8 @@ def _gen_ne_text(text: str, voice_id: str, **kw: Any) -> tuple:
         takes += k
         if _NE_GUARD.get("rerolled"):
             notes.append(f"re-voiced {len(_NE_GUARD['rerolled'])} take(s): " + "; ".join(_NE_GUARD["rerolled"]))
+        if _NE_GUARD.get("heard"):
+            notes.append("heard " + " / ".join(_NE_GUARD["heard"]))
         if _NE_GUARD.get("model_fallback") and _NE_GUARD["model_fallback"] not in notes:
             notes.append(_NE_GUARD["model_fallback"])
         if not _NE_GUARD.get("failed_takes"):
@@ -1562,10 +1643,16 @@ def _run_job(job: Dict[str, Any]) -> None:
 
         # mode "items" keeps one file per input line (the Reel case); "stitch"
         # joins them with the tuned gaps into a single narration.
+        # Nepali gets the studio finish on each finished file; see studio_polish.
+        studio_notes: List[str] = []
+
+        def finished(audio: np.ndarray) -> np.ndarray:
+            return _peak_normalize(_studio(audio, sr, params, studio_notes) if is_ne else audio)
+
         outputs = (
-            [_peak_normalize(a) for a in rendered]
+            [finished(a) for a in rendered]
             if mode == "items"
-            else [_peak_normalize(_stitch(rendered, sr, breaks))]
+            else [finished(_stitch(rendered, sr, breaks))]
         )
 
         items: List[Dict[str, Any]] = []
@@ -1607,8 +1694,10 @@ def _run_job(job: Dict[str, Any]) -> None:
                     # Which Nepali checkpoint voiced this job, so a clip can
                     # always be traced to its model.
                     "ne_model": f"{NE_MODEL}:{NE_FILE}",
+                    **({"ne_check": _NE_ASR.get("failed") or NE_ASR_MODEL} if is_ne else {}),
                 },
                 "chunks": diag[:200],
+                **({"studio": studio_notes[:200]} if studio_notes else {}),
             }
         if expressive_meta:
             result["params_used"] = expressive_meta.get("params_used")
@@ -1880,6 +1969,7 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
                     )
                     _BUSY = False
                 audio, _finish = _ne_finish(audio, sr, p["text"], p["voice_id"], p)
+                audio = _studio(audio, sr, p, [])
                 return {
                     "audio_b64": _wav_b64(audio, sr),
                     "sample_rate": sr,

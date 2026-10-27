@@ -31,6 +31,12 @@ from backend.voiceforge_lang import (  # noqa: E402
     ne_prepare,
     ne_spell_number,
     ne_split_mix,
+    ne_heard_error,
+    ne_heard_score,
+    ne_skeleton,
+    studio_polish,
+    studio_eq_gains,
+    STUDIO_TARGET_DB,
     ne_letters,
     ne_mark_pauses,
     ne_pace_factor,
@@ -580,3 +586,52 @@ class TestNepaliBlend:
         for bad in ("x.safetensors@0", "x.safetensors@1.5", "x.safetensors@-0.2"):
             with pytest.raises(ValueError):
                 ne_split_mix(bad)
+
+
+class TestHeardCheck:
+    def test_the_right_words_with_loose_vowels_pass(self):
+        err, first_ok = ne_heard_error("मोबाइलमा दुई चरणको प्रमाणीकरण अन गर्नुहोस्।", "मोबायल मा दुइ चरन को प्रमानिकरन अन गर्नुहोस")
+        assert err <= 0.25 and first_ok
+
+    def test_a_swallowed_word_fails(self):
+        err, first_ok = ne_heard_error("मोबाइलमा दुई चरणको प्रमाणीकरण अन गर्नुहोस्।", "आल्मा दूई चरन को प्रमनि करन अंगरन होस")
+        assert not first_ok
+        assert ne_heard_score(err, first_ok) > ne_heard_score(*ne_heard_error("मोबाइलमा दुई", "मोबायल मा दुई"))
+
+    def test_numbers_compare_as_words(self):
+        assert ne_skeleton("सन् 1925 मा") == ne_skeleton("सन् उन्नाइस सय पच्चीस मा")
+
+    def test_nothing_heard_is_all_wrong(self):
+        err, first_ok = ne_heard_error("नमस्ते साथीहरू", "")
+        assert err == 1.0 and not first_ok
+
+
+class TestStudioPolish:
+    def _voice(self, sr=24000, seconds=2.0):
+        import numpy as np
+
+        t = np.arange(int(sr * seconds)) / sr
+        rng = np.random.default_rng(0)
+        # Boomy: a strong 100 Hz hum under a weak voice-like buzz.
+        x = 0.5 * np.sin(2 * np.pi * 100 * t) + 0.05 * rng.standard_normal(len(t))
+        return x.astype(np.float32), sr
+
+    def test_boom_is_cut_and_length_kept(self):
+        from backend.voiceforge_lang import _band_levels
+
+        x, sr = self._voice()
+        out, note = studio_polish(x, sr)
+        assert len(out) == len(x) and note.startswith("eq ")
+        assert _band_levels(out, sr)[0] < _band_levels(x, sr)[0] - 3
+
+    def test_gains_are_clamped(self):
+        gains = studio_eq_gains([t - 40 for t in STUDIO_TARGET_DB])
+        assert max(gains) == 8.0
+        assert min(studio_eq_gains([t + 40 for t in STUDIO_TARGET_DB])) == -10.0
+
+    def test_silence_and_tiny_clips_are_left_alone(self):
+        import numpy as np
+
+        z = np.zeros(24000, dtype=np.float32)
+        assert studio_polish(z, 24000)[1] == ""
+        assert studio_polish(z[:100], 24000)[1] == ""
