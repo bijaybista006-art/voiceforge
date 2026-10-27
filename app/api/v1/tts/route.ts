@@ -72,6 +72,8 @@ const paramsSchema = z
     ne_check: z.boolean().optional(),
     /** Nepali: false skips the studio finish (tone balance and gentle compression). */
     studio: z.boolean().optional(),
+    /** Nepali: true voices the sentences of a paragraph two or so to a take, so they flow. */
+    ne_flow: z.boolean().optional(),
     ...expressiveFields,
   })
   .optional();

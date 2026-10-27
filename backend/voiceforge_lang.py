@@ -886,9 +886,18 @@ def ne_trim_leading(
     return out
 
 
-def ne_prepare(text: str, max_chars: int = 240) -> List[str]:
+# "Flow": sentences voiced together, two or so to a take, up to this length.
+# One sentence per take ends each one on its own falling close and starts the
+# next from nothing, which the owner heard as hard stops (Oct 2026). Voiced
+# together, the model carries the tone from one sentence into the next; the
+# pause between them is still set by ne_mark_pauses (NE_STOP_PAUSE_SEC).
+NE_FLOW_CHARS = 160
+
+
+def ne_prepare(text: str, max_chars: int = 240, flow: bool = False) -> List[str]:
     """Spoken numbers, sentence and breath chunking, then no orphan fragments."""
-    return ne_merge_short(ne_chunks(ne_expand_digits(text or ""), max_chars))
+    chunks = ne_chunks(ne_expand_digits(text or ""), max_chars)
+    return ne_merge_short(chunks, NE_FLOW_CHARS, NE_FLOW_CHARS) if flow else ne_merge_short(chunks)
 
 
 # ---------------------------------------------------------------------------

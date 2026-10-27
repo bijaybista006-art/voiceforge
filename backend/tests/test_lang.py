@@ -638,3 +638,14 @@ class TestStudioPolish:
         z = np.zeros(24000, dtype=np.float32)
         assert studio_polish(z, 24000)[1] == ""
         assert studio_polish(z[:100], 24000)[1] == ""
+
+
+class TestFlow:
+    def test_sentences_are_voiced_two_or_so_together(self):
+        from backend.voiceforge_lang import NE_FLOW_CHARS
+
+        s = "त्यहाँ एउटा पुरानो खानी थियो। " * 6
+        plain, flow = ne_prepare(s), ne_prepare(s, flow=True)
+        assert len(plain) == 6
+        assert 1 < len(flow) < 6 and all(len(c) <= NE_FLOW_CHARS for c in flow)
+        assert " ".join(flow) == " ".join(plain)

@@ -1207,10 +1207,16 @@ _NE_ALLOWED_REPOS = ("Firoj112/chatterbox-nepali-runs",)
 _NE_VARIANT: Dict[str, Any] = {}
 
 
+def _ne_flow(params: Dict[str, Any]) -> bool:
+    """Does the request ask for sentences voiced together? See NE_FLOW_CHARS."""
+    return str(params.get("ne_flow", "")).strip().lower() in ("1", "true", "on", "yes")
+
+
 def _set_ne_request(params: Dict[str, Any]) -> None:
     _NE_REQUEST["plain"] = str(params.get("ne_text") or "").lower() == "plain"
     _NE_REQUEST["source"] = str(params.get("ne_source") or "").strip()[:200]
     _NE_REQUEST["check"] = str(params.get("ne_check", "")).strip().lower() not in ("0", "false", "off", "no")
+    _NE_REQUEST["flow"] = _ne_flow(params)
     try:
         _NE_REQUEST["punct_frames"] = min(12, max(2, int(params.get("punct_frames") or 0))) if params.get("punct_frames") else 0
     except (TypeError, ValueError):
@@ -1326,7 +1332,7 @@ def _gen_ne_text(text: str, voice_id: str, **kw: Any) -> tuple:
     # end a sentence cleanly by itself — it is the end of a *take* that is
     # controlled — so sound trailing after a sentence survived in the middle
     # of a clip. It also keeps every piece inside the 200-character limit.
-    pieces = ne_prepare(text, NE_MAX_CHUNK_CHARS) or [text]
+    pieces = ne_prepare(text, NE_MAX_CHUNK_CHARS, flow=_NE_REQUEST.get("flow", False)) or [text]
     if len(pieces) > 1 and len(text) > NE_MAX_CHUNK_CHARS:
         notes.append(f"split {len(text)} characters into {len(pieces)} before voicing")
     audio = _join([voice(p, i, True) for i, p in enumerate(pieces)], sr)
@@ -1578,6 +1584,21 @@ def _run_job(job: Dict[str, Any]) -> None:
                 # One audio file per input line is the contract here, so the
                 # count must not change — expand digits, but never re-split.
                 chunks = [ne_expand_digits(c) for c in chunks]
+            elif _ne_flow(params):
+                # The sentences of each paragraph voiced two or so to a take;
+                # see NE_FLOW_CHARS. Paragraph ends keep their longer gap.
+                merged: List[str] = []
+                merged_breaks: List[bool] = []
+                paragraph: List[str] = []
+                for i, ch in enumerate(chunks):
+                    paragraph.append(ch)
+                    if i == len(chunks) - 1 or (i < len(breaks) and breaks[i]):
+                        pieces = ne_prepare(" ".join(paragraph), flow=True)
+                        merged += pieces
+                        merged_breaks += [False] * (len(pieces) - 1) + [True] if pieces else []
+                        paragraph = []
+                if merged:
+                    chunks, breaks = merged, merged_breaks
             else:
                 chunks = [c for ch in chunks for c in ne_prepare(ch)] or chunks
 
