@@ -51,6 +51,10 @@ const paramsSchema = z
     ne_source: z.string().min(1).max(200).optional(),
     /** Nepali test switch: frames (40 ms) a take runs on after its closing punctuation, 2–12. */
     punct_frames: z.number().int().min(2).max(12).optional(),
+    /** Nepali: false skips the listening check that re-voices a take with a word heard wrong. */
+    ne_check: z.boolean().optional(),
+    /** Nepali: false skips the studio finish (tone balance and gentle compression). */
+    studio: z.boolean().optional(),
   })
   .optional();
 
