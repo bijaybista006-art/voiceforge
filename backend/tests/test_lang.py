@@ -598,6 +598,9 @@ class TestHeardCheck:
         assert not first_ok
         assert ne_heard_score(err, first_ok) > ne_heard_score(*ne_heard_error("मोबाइलमा दुई", "मोबायल मा दुई"))
 
+    def test_a_word_split_at_a_full_vowel_is_still_right(self):
+        assert ne_heard_error("अपरिचित नम्बरबाट", "अपर इचित नमबर बाटा")[1]
+
     def test_numbers_compare_as_words(self):
         assert ne_skeleton("सन् 1925 मा") == ne_skeleton("सन् उन्नाइस सय पच्चीस मा")
 

@@ -686,7 +686,10 @@ def ne_heard_error(want: str, heard: str):
         return 0.0, True
     err = min(1.0, _edit_distance(w, h) / len(w))
     first = next((s for s in (ne_skeleton(x) for x in (want or "").split()) if s), "")
-    return err, _edit_distance(first, h[: len(first)]) <= 1
+    # Whisper may split a word with a full vowel ("अपरिचित" -> "अपर इचित"),
+    # which adds a letter: compare against a letter more or less as well.
+    off = min(_edit_distance(first, h[: len(first) + k]) for k in (-1, 0, 1)) if first else 0
+    return err, off <= max(1, len(first) // 4)
 
 
 def ne_heard_score(err: float, first_ok: bool) -> float:
@@ -735,8 +738,10 @@ def _band_levels(audio, sr: int):
     freqs = _np.fft.rfftfreq(n, 1 / sr)
     levels = []
     for lo, hi in STUDIO_BANDS:
-        sel = (freqs >= lo) & (freqs < min(hi, sr / 2))
-        levels.append(10 * _np.log10(power[sel].sum() + 1e-20) if sel.any() else None)
+        # Level per Hz, so a wide band doesn't read louder for being wide;
+        # the DC bin is not sound.
+        sel = (freqs > 0) & (freqs >= lo) & (freqs < min(hi, sr / 2))
+        levels.append(10 * _np.log10(power[sel].mean() + 1e-20) if sel.any() else None)
     ref = levels[4]
     return [None if v is None or ref is None else v - ref for v in levels]
 
