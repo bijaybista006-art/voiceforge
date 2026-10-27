@@ -114,21 +114,23 @@ describe("training prompts", () => {
     expect(TRAINING_PROMPTS.ne[0].id).toBe("ne-001");
   });
 
-  it("serves the voice-reference and important-word sentences first", () => {
+  it("serves the breathy-sound, voice-reference and important-word sentences first", () => {
     const first = nextPrompt("ne", new Set());
-    expect(first?.id).toBe("ne-488");
-    expect(first?.note).toMatch(/^Voice reference/);
-    const order = recordingOrder("ne").map((p) => p.id);
+    expect(first?.id).toBe("ne-568");
+    expect(first?.note).toMatch(/^Breathy sounds/);
+    const breathy = TRAINING_PROMPTS.ne.filter((p) => p.note?.startsWith("Breathy sounds")).map((p) => p.id);
+    expect(recordingOrder("ne").slice(0, breathy.length).map((p) => p.id)).toEqual(breathy);
+    const order = recordingOrder("ne").map((p) => p.id).slice(breathy.length);
     expect(order.slice(0, 11)).toEqual([
       "ne-488", "ne-489", "ne-490", "ne-491", "ne-492", "ne-493", "ne-494", "ne-495",
       "ne-028", "ne-079", "ne-082",
     ]);
     expect(order[11]).toBe("ne-496");
-    expect(new Set(order).size).toBe(TRAINING_PROMPTS.ne.length);
+    expect(new Set(order).size + breathy.length).toBe(TRAINING_PROMPTS.ne.length);
   });
 
   it("then moves through the rest in order, skipping what is recorded", () => {
-    const priority = recordingOrder("ne").filter((p) => /^(Voice reference|Important words|Long passage|Every kind of word)/.test(p.note ?? "") || ["ne-028", "ne-079", "ne-082"].includes(p.id));
+    const priority = recordingOrder("ne").filter((p) => /^(Breathy sounds|Voice reference|Important words|Long passage|Every kind of word)/.test(p.note ?? "") || ["ne-028", "ne-079", "ne-082"].includes(p.id));
     const recorded = new Set([...priority.map((p) => p.id), "ne-001", "ne-002"]);
     expect(nextPrompt("ne", recorded)?.id).toBe("ne-003");
     expect(nextPrompt("ne", recorded, "ne-003")?.id).toBe("ne-004");
