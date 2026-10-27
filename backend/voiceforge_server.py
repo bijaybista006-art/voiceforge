@@ -1715,6 +1715,9 @@ def _run_job(job: Dict[str, Any]) -> None:
                     # Which Nepali checkpoint voiced this job, so a clip can
                     # always be traced to its model.
                     "ne_model": f"{NE_MODEL}:{NE_FILE}",
+                    # The trained version Settings switched on, which is what
+                    # really spoke (ne_model is only the backend's default).
+                    **({"ne_source": _NE_VARIANT.get("key") or _NE_VARIANT.get("failed")} if is_ne and _NE_REQUEST.get("source") else {}),
                     **({"ne_check": _NE_ASR.get("failed") or NE_ASR_MODEL} if is_ne else {}),
                 },
                 "chunks": diag[:200],

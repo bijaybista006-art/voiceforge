@@ -65,11 +65,11 @@ RUNS_DIR = "/runs"
 
 # Smoke runs check the pipeline end to end on whatever clips exist; real runs
 # refuse to train on too little audio, which would only teach it to repeat a
-# few sentences. Between MIN_MINUTES and AUTO_ON_MINUTES a run is allowed, but
-# its result is only saved: with so few held-out clips the loss is too noisy
-# to switch a model on by, so it is compared by ear first.
+# few sentences. Any run that clears MIN_GAIN is switched on, however short:
+# the owner asked (Oct 2026) for every run to go live by itself and to hear
+# it in their videos, saying so if it sounds wrong, rather than wait for an
+# ear test first. Settings -> Nepali model switches it back.
 MIN_MINUTES = 3.0
-AUTO_ON_MINUTES = 10.0
 # Clips kept aside for judging a run: fewer gives a number too noisy to use.
 MIN_HELD_OUT = 6
 # Held-out loss must drop by at least this much for a new version to go live.
@@ -371,9 +371,7 @@ def train(
     activated = False
     before = history[0]["val"]
     gain = (before - best["val"]) / before if before else 0.0
-    if push and gain >= MIN_GAIN and minutes < AUTO_ON_MINUTES:
-        log(f"trained on only {minutes:.1f} min: saved as {out_file}, not switched on; compare it by ear first")
-    elif push and gain >= MIN_GAIN:
+    if push and gain >= MIN_GAIN:
         body = json.dumps({
             "file": out_file,
             "version": version,
@@ -432,8 +430,5 @@ def main(
     elif result.get("activated"):
         print(f"RESULT: {result['version']} trained ({result['minutes']} min of recordings) and switched on. "
               f"Held-out loss {result['history'][0]['val']:.3f} -> {min(h['val'] for h in result['history']):.3f}.")
-    elif result.get("minutes", 0) < AUTO_ON_MINUTES:
-        print(f"RESULT: {result['version']} trained on {result['minutes']} min and saved, not switched on "
-              f"(under {AUTO_ON_MINUTES:.0f} min it is compared by ear first). Tell Claude to test {result['version']}.")
     else:
         print(f"RESULT: {result['version']} trained and saved, but not switched on (gain {result.get('gain', 0):.1%}). See the log.")
