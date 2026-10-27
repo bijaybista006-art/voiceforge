@@ -64,4 +64,6 @@ jobs:
       # test, and whether the new version was switched on.
       - name: Summary
         if: always()
-        run: grep "^RESULT:" train.log >> "$GITHUB_STEP_SUMMARY" || echo "RESULT: the run stopped before training finished; see the Train step log." >> "$GITHUB_STEP_SUMMARY"
+        # A block, not a plain scalar: the ": " inside would end the YAML key.
+        run: |
+          grep "^RESULT:" train.log >> "$GITHUB_STEP_SUMMARY" || echo "RESULT: the run stopped before training finished; see the Train step log." >> "$GITHUB_STEP_SUMMARY"
