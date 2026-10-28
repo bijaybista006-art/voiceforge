@@ -913,6 +913,51 @@ def _generate_chunk(
     return np.asarray(audio, dtype=np.float32), int(sr), round(time.time() - t0, 2)
 
 
+# Every voice's reference is cleaned when a backend caches it: the speech is
+# separated from fan hum, room noise and anything else behind it by Demucs
+# (htdemucs, "vocals"), then given the studio finish. The clone copies its
+# reference's sound, background included, so this is what makes any voice
+# recorded at home come out clean, with nothing to do per voice. A backend
+# without demucs installed uses the clip as it is.
+# VOICEFORGE_VOICE_CLEAN=0 turns it off.
+VOICE_CLEAN = os.environ.get("VOICEFORGE_VOICE_CLEAN", "1").strip() != "0"
+_DEMUCS: Dict[str, Any] = {}
+
+
+def _clean_reference(data: np.ndarray, sr: int, voice_id: str) -> tuple:
+    """The reference clip with background noise removed and the studio finish."""
+    if not VOICE_CLEAN or _DEMUCS.get("failed") or len(data) < sr:
+        return data, sr
+    try:
+        from demucs.apply import apply_model  # noqa: PLC0415
+        from demucs.pretrained import get_model  # noqa: PLC0415
+        import librosa  # noqa: PLC0415
+
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        if "model" not in _DEMUCS:
+            _DEMUCS["model"] = get_model("htdemucs").to(device).eval()
+        model = _DEMUCS["model"]
+        x = data if sr == model.samplerate else librosa.resample(data, orig_sr=sr, target_sr=model.samplerate)
+        # Demucs works on stereo, normalised the way its own command line does.
+        mix = torch.from_numpy(np.ascontiguousarray(x)).float()
+        mean, std = mix.mean(), mix.std() + 1e-8
+        wav = ((mix - mean) / std).expand(2, -1)[None].to(device)
+        with torch.inference_mode():
+            sources = apply_model(model, wav, device=device, split=True, overlap=0.25, progress=False)[0]
+        voice = (sources[model.sources.index("vocals")].mean(0) * std.to(device) + mean.to(device)).cpu().numpy()
+        out, note = studio_polish(voice.astype(np.float32), model.samplerate)
+        out = _peak_normalize(out)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        print(f"[voice] {voice_id}: background removed, studio finish {note or 'skipped'}", flush=True)
+        return out, model.samplerate
+    except Exception as e:  # noqa: BLE001
+        print(f"[voice] cleaning unavailable, using the clip as recorded: {e}", flush=True)
+        _DEMUCS.clear()
+        _DEMUCS["failed"] = str(e)[:200]
+        return data, sr
+
+
 def cache_voice(voice_id: str, audio_url: str, transcript: str = "", language: str = "en") -> float:
     """Download a reference clip (from Blob) and cache it on local disk."""
     path = os.path.join(VOICES_DIR, f"{voice_id}.wav")
@@ -921,6 +966,7 @@ def cache_voice(voice_id: str, audio_url: str, transcript: str = "", language: s
     data, sr = sf.read(io.BytesIO(raw))
     if getattr(data, "ndim", 1) > 1:
         data = data.mean(axis=1)
+    data, sr = _clean_reference(np.asarray(data, dtype=np.float32), sr, voice_id)
     sf.write(path, data, sr)
     VOICES[voice_id] = {"path": path, "transcript": (transcript or "").strip(), "language": language}
     _NE_VOICE_RATE.pop(voice_id, None)

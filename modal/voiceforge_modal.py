@@ -48,6 +48,8 @@ image = (
         # Fetches the Nepali T3 checkpoint at runtime; chatterbox pulls it in
         # already, but the Nepali path depends on it directly.
         "huggingface_hub",
+        # Separates a voice clip from its background noise; see _clean_reference.
+        "demucs==4.0.1",
     )
     .run_function(_bake_weights)
     .add_local_dir("backend", remote_path="/root/backend")
