@@ -16,6 +16,8 @@ import { deleteBlob, isBlobConfigured, putBlob } from "./blob";
 import { isRedisConfigured, kvDel, kvGet, kvMGet, kvSet, redisFailure } from "./redis";
 
 const KEY = (id: string) => `vf:voice:${id}`;
+/** Where a deleted voice's requests go: the voice that replaced it. */
+const MOVED_KEY = (id: string) => `vf:voice-moved:${id}`;
 const INDEX_KEY = "vf:voices";
 const DEFAULT_KEY = "vf:voice:default";
 
@@ -171,8 +173,20 @@ export async function listVoices(): Promise<LibraryVoiceView[]> {
     .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || b.createdAt - a.createdAt);
 }
 
+/**
+ * A voice by id. A voice deleted with a replacement answers as that
+ * replacement, so workflows that still name the old id keep working after
+ * the owner re-records (followed up to three replacements deep).
+ */
 export async function getVoice(id: string): Promise<LibraryVoice | null> {
-  return await kvGet<LibraryVoice>(KEY(id));
+  for (let hops = 0; hops < 4; hops++) {
+    const voice = await kvGet<LibraryVoice>(KEY(id));
+    if (voice) return voice;
+    const next = await kvGet<string>(MOVED_KEY(id));
+    if (!next) return null;
+    id = next;
+  }
+  return null;
 }
 
 /**
@@ -308,9 +322,10 @@ export async function setDefaultVoice(id: string): Promise<boolean> {
   return true;
 }
 
-export async function deleteVoice(id: string): Promise<boolean> {
-  const existing = await getVoice(id);
+export async function deleteVoice(id: string, replacedBy?: string): Promise<boolean> {
+  const existing = await kvGet<LibraryVoice>(KEY(id));
   if (!existing) return false;
+  if (replacedBy) await kvSet(MOVED_KEY(id), replacedBy);
   await deleteBlob(existing.audioUrl);
   await kvDel(KEY(id));
   await writeIndex((await readIndex()).filter((x) => x !== id));

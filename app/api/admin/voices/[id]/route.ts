@@ -62,9 +62,14 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   return NextResponse.json({ ok: true });
 }
 
-export async function DELETE(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
-  if (!(await deleteVoice(id))) {
+  // ?replaceWith=<voice id>: requests for this voice go to that one from now on.
+  const replaceWith = req.nextUrl.searchParams.get("replaceWith") || undefined;
+  if (replaceWith && (replaceWith === id || !(await getVoice(replaceWith)))) {
+    return NextResponse.json({ error: "Unknown replacement voice." }, { status: 400 });
+  }
+  if (!(await deleteVoice(id, replaceWith))) {
     return NextResponse.json({ error: "Unknown voice." }, { status: 404 });
   }
   return NextResponse.json({ ok: true });

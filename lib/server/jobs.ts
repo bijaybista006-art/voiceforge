@@ -318,6 +318,8 @@ export async function createAndDispatchJob(
   if (!voice) {
     throw new JobError(`No voice with id "${input.voiceId}".`, 404, "unknown_voice");
   }
+  // A replaced voice answers as its replacement (getVoice): use that id.
+  input = { ...input, voiceId: voice.id };
 
   const id = crypto.randomUUID();
   const now = Date.now();
