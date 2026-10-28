@@ -1765,6 +1765,8 @@ def _run_job(job: Dict[str, Any]) -> None:
                     # really spoke (ne_model is only the backend's default).
                     **({"ne_source": _NE_VARIANT.get("key") or _NE_VARIANT.get("failed")} if is_ne and _NE_REQUEST.get("source") else {}),
                     **({"ne_check": _NE_ASR.get("failed") or NE_ASR_MODEL} if is_ne else {}),
+                    # Whether voice references are being cleaned (see _clean_reference).
+                    "voice_clean": _DEMUCS.get("failed") or ("htdemucs" if "model" in _DEMUCS else "not run"),
                 },
                 "chunks": diag[:200],
                 **({"studio": studio_notes[:200]} if studio_notes else {}),
