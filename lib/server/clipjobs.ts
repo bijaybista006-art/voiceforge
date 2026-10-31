@@ -8,9 +8,10 @@
  * backend scales to zero and a URL into a container that is gone is no use.
  *
  * Where clips go:
- *   Modal     its own app, https://<ws>--voiceforge-wan.modal.run, with a
- *             CPU-only /health at …--voiceforge-wan-health.modal.run that is
- *             what gets probed, so status checks never wake the L40S.
+ *   Modal     its own app, https://<ws>--voiceforge-wan[.<region>].modal.run,
+ *             with a CPU-only /health at …--voiceforge-wan-health[.<region>]…
+ *             that is what gets probed, so status checks never wake the L40S.
+ *             The region form is found by trying candidates (wanCandidateUrls).
  *   Notebook  the same tunnel as voice, under /wan (only when the notebook
  *             was started with ENABLE_AI_VIDEO = True).
  * Standard order, free notebooks first, exactly as for voice and presenters.
@@ -111,21 +112,32 @@ export function clipRequestBody(input: Omit<ClipInput, "source" | "callbackUrl">
 // --- where a backend makes clips ------------------------------------------
 
 /**
- * The Wan service and health addresses for a backend, derived from its voice
- * address so nobody has to type them. Null when it cannot have one.
+ * Regions a newer Modal app's web URLs carry: `<ws>--<label>.<region>.modal.run`.
+ * Apps created before Modal added regions keep `<ws>--<label>.modal.run`, which
+ * is why the voice app (old) and the Wan app (new, Oct 2026) differ: seen in
+ * the first deploy, voice at …--voiceforge-api.modal.run and Wan at
+ * …--voiceforge-wan.us-east.modal.run.
  */
-export function wanCandidateUrls(
-  apiUrl: string,
-  selfRegistered = false
-): { service: string; health: string } | null {
-  const MODAL_API = "-api.modal.run";
+const MODAL_REGIONS = ["us-east", "us-west", "eu-west"];
+
+type WanUrls = { service: string; health: string };
+
+/**
+ * Where a backend's Wan service could be, derived from its voice address so
+ * nobody has to type it. Most likely first; discoverWan keeps the first one
+ * that answers. Empty when the backend cannot have one.
+ */
+export function wanCandidateUrls(apiUrl: string, selfRegistered = false): WanUrls[] {
   const url = apiUrl.replace(/\/+$/, "");
-  if (url.endsWith(MODAL_API)) {
-    const base = url.slice(0, -MODAL_API.length);
-    return { service: `${base}-wan.modal.run`, health: `${base}-wan-health.modal.run` };
+  const modal = url.match(/^(https:\/\/[^/]+?)-api((?:\.[a-z0-9-]+)?\.modal\.run)$/);
+  if (modal) {
+    const [, base, suffix] = modal;
+    // The voice URL's own form first, then the regional forms a newer app gets.
+    const suffixes = [...new Set([suffix, ...MODAL_REGIONS.map((r) => `.${r}.modal.run`), ".modal.run"])];
+    return suffixes.map((s) => ({ service: `${base}-wan${s}`, health: `${base}-wan-health${s}` }));
   }
   // A notebook serves clips from its voice tunnel, under /wan.
-  return selfRegistered ? { service: `${url}/wan`, health: `${url}/wan` } : null;
+  return selfRegistered ? [{ service: `${url}/wan`, health: `${url}/wan` }] : [];
 }
 
 /** Whether a backend's Wan address should be asked (again) right now. */
@@ -133,9 +145,9 @@ export function shouldProbeWan(
   b: Pick<BackendView, "url" | "selfRegistered" | "wanCapabilities" | "wanProbedAt" | "wanProbedUrl">,
   now = Date.now()
 ): boolean {
-  const urls = wanCandidateUrls(b.url, b.selfRegistered !== false);
-  if (!urls) return false;
-  if (b.wanProbedUrl !== urls.health) return true; // never asked this address
+  const candidates = wanCandidateUrls(b.url, b.selfRegistered !== false);
+  if (!candidates.length) return false;
+  if (!candidates.some((c) => c.health === b.wanProbedUrl)) return true; // never asked here
   if (b.wanCapabilities?.includes(CLIP_CAPABILITY)) return false; // it said yes
   return now - (b.wanProbedAt ?? 0) > WAN_REPROBE_AFTER_MS;
 }
@@ -158,39 +170,56 @@ export function wanInstallNote(
 export async function discoverWan(provider: BackendProvider, timeoutMs = 50_000): Promise<string[]> {
   const backend = await getBackend(provider);
   if (!backend) return [];
-  const urls = wanCandidateUrls(backend.url, backend.selfRegistered !== false);
-  if (!urls) return backend.wanCapabilities ?? [];
+  const candidates = wanCandidateUrls(backend.url, backend.selfRegistered !== false);
+  if (!candidates.length) return backend.wanCapabilities ?? [];
+  // The address that answered last time goes first.
+  candidates.sort((a, b) => Number(b.health === backend.wanProbedUrl) - Number(a.health === backend.wanProbedUrl));
 
-  const asked = { wanProbedAt: Date.now(), wanProbedUrl: urls.health };
-  try {
-    const res = await fetch(`${urls.health}/health`, {
-      headers: backendHeaders(),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) {
-      // Not deployed, or a notebook started without AI video: a "no".
-      await updateBackend(provider, { ...asked, wanCapabilities: [] });
-      return [];
+  // One budget for all candidates, so the Test route stays inside 60 s.
+  const deadline = Date.now() + timeoutMs;
+  let saidNo = false;
+  for (const c of candidates) {
+    const left = deadline - Date.now();
+    if (left < 1_000) break;
+    try {
+      const res = await fetch(`${c.health}/health`, {
+        headers: backendHeaders(),
+        signal: AbortSignal.timeout(left),
+      });
+      if (!res.ok) {
+        // Nothing deployed at this address (or a notebook without AI video).
+        saidNo = true;
+        continue;
+      }
+      const health = (await res.json()) as {
+        capabilities?: string[];
+        limits?: Record<string, unknown>;
+        install?: { state?: string; stage?: string; error?: string };
+      };
+      const caps = (health.capabilities ?? []).filter((x) => x === CLIP_CAPABILITY);
+      await updateBackend(provider, {
+        wanProbedAt: Date.now(),
+        wanProbedUrl: c.health,
+        wanUrl: c.service,
+        wanCapabilities: caps,
+        wanNote: wanInstallNote(health.install),
+        ...(health.limits ? { wanLimits: health.limits } : {}),
+      });
+      return caps;
+    } catch {
+      // Unreachable or slow here: try the next form.
     }
-    const health = (await res.json()) as {
-      capabilities?: string[];
-      limits?: Record<string, unknown>;
-      install?: { state?: string; stage?: string; error?: string };
-    };
-    const caps = (health.capabilities ?? []).filter((c) => c === CLIP_CAPABILITY);
-    await updateBackend(provider, {
-      ...asked,
-      wanUrl: urls.service,
-      wanCapabilities: caps,
-      wanNote: wanInstallNote(health.install),
-      ...(health.limits ? { wanLimits: health.limits } : {}),
-    });
-    return caps;
-  } catch {
-    // Asleep or slow. Keep whatever was known.
-    await updateBackend(provider, asked).catch(() => {});
-    return backend.wanCapabilities ?? [];
   }
+
+  // Recorded either way, so it is asked again after a pause, not every view.
+  const asked = { wanProbedAt: Date.now(), wanProbedUrl: candidates[0].health };
+  if (saidNo) {
+    await updateBackend(provider, { ...asked, wanCapabilities: [] });
+    return [];
+  }
+  // Nothing answered at all — asleep or slow. Keep whatever was known.
+  await updateBackend(provider, asked).catch(() => {});
+  return backend.wanCapabilities ?? [];
 }
 
 /** Ask every backend that is due to be asked. True if anything new was learned. */
