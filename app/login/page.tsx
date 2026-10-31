@@ -53,7 +53,7 @@ function LoginForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="••••••••••"
-          className="h-11 w-full rounded-xl border border-line bg-white pl-3.5 pr-20 text-sm text-ink transition-colors hover:border-lineStrong focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15"
+          className="h-11 w-full rounded-xl border border-line bg-surface pl-3.5 pr-20 text-sm text-ink transition-colors hover:border-lineStrong focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15"
         />
         <button
           type="button"
@@ -74,7 +74,7 @@ function LoginForm() {
       <button
         type="submit"
         disabled={busy || !password}
-        className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-600 text-sm font-semibold text-white shadow-[0_4px_14px_-4px_rgba(37,99,235,.5)] transition-all hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+        className="mt-6 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand-600 text-sm font-semibold text-white shadow-[0_4px_14px_-4px_rgba(37,99,235,.5)] transition-all hover:bg-[rgb(29_78_216)] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
       >
         {busy ? "Signing in…" : "Sign in"}
         {!busy ? <IconArrowRight className="h-4 w-4" /> : null}

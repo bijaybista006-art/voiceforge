@@ -249,7 +249,7 @@ function SpeakerBar({
             aria-pressed={active}
             onClick={() => onPick(name)}
             className={`h-8 rounded-lg border px-3 text-[13px] font-medium transition-colors ${
-              active ? "border-brand-500 bg-brand-50 text-brand-700" : "border-line bg-white text-muted hover:text-ink"
+              active ? "border-brand-500 bg-brand-50 text-brand-700" : "border-line bg-surface text-muted hover:text-ink"
             }`}
           >
             {name}
@@ -271,7 +271,7 @@ function SpeakerBar({
             onChange={(e) => setDraft(e.target.value)}
             placeholder="Speaker's name, e.g. Bijay"
             aria-label="New speaker's name"
-            className="h-8 w-52 rounded-lg border border-line bg-white px-3 text-[13px] text-ink outline-none focus:border-brand-500"
+            className="h-8 w-52 rounded-lg border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-brand-500"
           />
           <Button size="sm" variant="primary" type="submit" disabled={!draft.trim()}>
             Add
@@ -532,7 +532,7 @@ function AddClipCard({
             Quiet room, same mic each time, normal speaking voice. 3–{MAX_CLIP_SEC} seconds per clip.
           </p>
         </div>
-        <div className="inline-flex rounded-xl border border-line bg-white p-0.5" role="tablist">
+        <div className="inline-flex rounded-xl border border-line bg-surface p-0.5" role="tablist">
           {(["prompt", "free"] as const).map((m) => (
             <button
               key={m}
@@ -573,7 +573,7 @@ function AddClipCard({
               </div>
               <p
                 lang={language}
-                className="rounded-xl border border-line bg-white px-4 py-4 text-[19px] leading-relaxed text-ink"
+                className="rounded-xl border border-line bg-surface px-4 py-4 text-[19px] leading-relaxed text-ink"
               >
                 {prompt.text}
               </p>
@@ -585,7 +585,7 @@ function AddClipCard({
               ) : null}
             </div>
           ) : (
-            <p className="rounded-xl border border-line bg-white px-4 py-4 text-[13px] text-muted">
+            <p className="rounded-xl border border-line bg-surface px-4 py-4 text-[13px] text-muted">
               Every built-in {language === "ne" ? "Nepali" : "English"} sentence is recorded. Switch to
               free recording to keep adding your own.
             </p>
@@ -817,7 +817,7 @@ function ReferenceCard({
               maxLength={80}
               onChange={(e) => setName(e.target.value)}
               aria-label="Voice name"
-              className="h-9 w-72 rounded-lg border border-line bg-white px-3 text-[13px] text-ink outline-none focus:border-brand-500"
+              className="h-9 w-72 rounded-lg border border-line bg-surface px-3 text-[13px] text-ink outline-none focus:border-brand-500"
             />
             <Button variant="primary" onClick={() => void save()} disabled={saving || !name.trim()}>
               <IconCheck className="h-4 w-4" /> {saving ? "Saving…" : "Save as voice"}
@@ -866,7 +866,7 @@ function ClipList({
         <div className="flex gap-2">
           <a
             href={`/api/admin/training/manifest?language=${language}&format=txt${who}`}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-[13px] text-ink hover:border-lineStrong ${
+            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] text-ink hover:border-lineStrong ${
               samples.length ? "" : "pointer-events-none opacity-40"
             }`}
           >
@@ -874,7 +874,7 @@ function ClipList({
           </a>
           <a
             href={`/api/admin/training/manifest?language=${language}&format=json${who}`}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-[13px] text-ink hover:border-lineStrong ${
+            className={`inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-[13px] text-ink hover:border-lineStrong ${
               samples.length ? "" : "pointer-events-none opacity-40"
             }`}
           >

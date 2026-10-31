@@ -46,7 +46,7 @@ export function SpeechConnectionForm() {
         </Button>
         <Link
           href="/admin/backends"
-          className="inline-flex h-10 items-center rounded-xl border border-line bg-white px-4 text-sm text-ink transition-colors hover:border-lineStrong"
+          className="inline-flex h-10 items-center rounded-xl border border-line bg-surface px-4 text-sm text-ink transition-colors hover:border-lineStrong"
         >
           Manage backends
         </Link>

@@ -436,7 +436,7 @@ function AddVoiceCard({ disabled, onAdded }: { disabled: boolean; onAdded: () =>
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[12.5px] font-medium text-muted">Reference clip</span>
-            <div className="inline-flex rounded-xl border border-line bg-white p-0.5" role="tablist">
+            <div className="inline-flex rounded-xl border border-line bg-surface p-0.5" role="tablist">
               {(["record", "upload"] as const).map((m) => (
                 <button
                   key={m}
@@ -465,7 +465,7 @@ function AddVoiceCard({ disabled, onAdded }: { disabled: boolean; onAdded: () =>
                 {readingScript ? guide.howTo : guide.ownText}
               </p>
               {readingScript && script ? (
-                <div lang={language} className="rounded-xl border border-line bg-white px-4 py-4">
+                <div lang={language} className="rounded-xl border border-line bg-surface px-4 py-4">
                   <p className="text-[18px] leading-relaxed text-ink">{script.first}</p>
                   <p className="my-2 flex items-center gap-2 text-[12px] font-medium text-brand-600">
                     <span className="h-px flex-1 bg-brand-100" />

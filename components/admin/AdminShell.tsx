@@ -91,7 +91,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-bg">
-      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[264px] flex-col border-r border-line bg-white lg:flex">
+      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-[264px] flex-col border-r border-line bg-surface lg:flex">
         <div className="flex h-16 shrink-0 items-center gap-2.5 border-b border-line px-5">
           <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-accent-500 shadow-lg shadow-brand-500/20">
             <IconWave className="h-4 w-4 text-white" />
@@ -139,7 +139,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
 
       <div className="flex min-w-0 flex-1 flex-col lg:pl-[264px]">
         {/* mobile bar */}
-        <header className="flex h-16 items-center gap-3 border-b border-line bg-white px-4 lg:hidden">
+        <header className="flex h-16 items-center gap-3 border-b border-line bg-surface px-4 lg:hidden">
           <span className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-brand-500 to-accent-500">
             <IconWave className="h-4 w-4 text-white" />
           </span>
@@ -153,7 +153,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         </header>
 
         {/* mobile nav strip */}
-        <nav className="flex gap-1 overflow-x-auto border-b border-line bg-white px-3 py-2 no-scrollbar lg:hidden">
+        <nav className="flex gap-1 overflow-x-auto border-b border-line bg-surface px-3 py-2 no-scrollbar lg:hidden">
           {[...PLATFORM, ...TRAINING, ...DEVELOPER]
             .filter((i) => !i.soon)
             .map((item) => (

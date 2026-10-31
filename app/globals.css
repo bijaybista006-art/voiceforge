@@ -3,16 +3,118 @@
 @tailwind utilities;
 
 /* ==============================================================
-   VoiceForge — global styles
-   Light slate ground, blue brand, white cards. Mirrors the
-   Tech Notebook design language.
+   VoiceForge design tokens — UI v2
+   Every colour is an RGB triple so Tailwind can add opacity
+   (`bg-audio/20`). Light is the default; dark is a separately
+   tuned palette (not an inversion). The theme is chosen by
+   data-theme on <html>, set before first paint by the inline
+   script in app/layout.tsx; prefers-color-scheme covers no-JS.
    ============================================================== */
 
 :root {
   color-scheme: light;
-  --brand: #2563eb;
-  --accent: #7c3aed;
-  --live: #f59e0b;
+
+  /* ground + surfaces */
+  --bg: 244 246 250;          /* #f4f6fa */
+  --surface: 255 255 255;
+  --surface2: 248 250 252;    /* #f8fafc */
+  --surface3: 238 242 247;    /* #eef2f7 */
+  --line: 226 232 240;        /* #e2e8f0 */
+  --line-strong: 203 213 225; /* #cbd5e1 */
+
+  /* type */
+  --ink: 15 23 42;            /* #0f172a */
+  --muted: 71 85 105;         /* #475569  7.6:1 on white */
+  --faint: 100 116 139;       /* #64748b  4.8:1 on white */
+
+  /* product accents */
+  --audio: 37 99 235;         /* brand blue  #2563eb */
+  --video: 124 58 237;        /* violet      #7c3aed */
+
+  /* state */
+  --live: 180 83 9;           /* amber-700, readable as text on white */
+  --danger: 220 38 38;
+  --ready: 22 163 74;
+
+  /* brand ramp: 50/100 tints and 700 text follow the theme */
+  --brand-50: 239 246 255;
+  --brand-100: 219 234 254;
+  --brand-300: 147 197 253;
+  --brand-400: 96 165 250;
+  --brand-500: 59 130 246;
+  --brand-600: 37 99 235;
+  --brand-700: 29 78 216;
+  --brand-950: 23 37 84;
+  --accent-50: 245 243 255;
+  --accent-400: 167 139 250;
+  --accent-500: 139 92 246;
+  --accent-600: 124 58 237;
+  --accent-700: 109 40 217;
+
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.05), 0 4px 14px rgb(15 23 42 / 0.05);
+  --shadow-lift: 0 10px 28px rgb(15 23 42 / 0.1), 0 2px 6px rgb(15 23 42 / 0.05);
+  --overlay: 15 23 42;
+
+  /* legacy names still referenced by inline styles */
+  --brand: rgb(var(--audio));
+  --accent: rgb(var(--video));
+}
+
+/* The dark palette: deep blue-black ground, raised surfaces get lighter,
+   accents brighten so text on dark keeps its contrast. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: 9 12 20;              /* #090c14 */
+  --surface: 17 21 31;        /* #11151f */
+  --surface2: 22 27 39;       /* #161b27 */
+  --surface3: 30 36 50;       /* #1e2432 */
+  --line: 39 46 63;           /* #272e3f */
+  --line-strong: 56 65 86;    /* #384156 */
+  --ink: 230 235 243;         /* #e6ebf3 */
+  --muted: 160 171 192;       /* #a0abc0 */
+  --faint: 125 137 161;       /* #7d89a1  5.0:1 on surface */
+  --audio: 96 165 250;        /* #60a5fa */
+  --video: 167 139 250;       /* #a78bfa */
+  --live: 251 191 36;         /* #fbbf24 */
+  --danger: 248 113 113;      /* #f87171 */
+  --ready: 74 222 128;        /* #4ade80 */
+  --brand-50: 23 37 72;       /* tinted panel on dark */
+  --brand-100: 30 50 100;
+  --brand-700: 147 197 253;   /* text on dark tints */
+  --accent-50: 36 27 66;
+  --accent-700: 196 181 253;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 16px rgb(0 0 0 / 0.25);
+  --shadow-lift: 0 14px 34px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
+  --overlay: 0 0 0;
+}
+
+/* No JavaScript: follow the OS until a choice can be applied. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: 9 12 20;
+    --surface: 17 21 31;
+    --surface2: 22 27 39;
+    --surface3: 30 36 50;
+    --line: 39 46 63;
+    --line-strong: 56 65 86;
+    --ink: 230 235 243;
+    --muted: 160 171 192;
+    --faint: 125 137 161;
+    --audio: 96 165 250;
+    --video: 167 139 250;
+    --live: 251 191 36;
+    --danger: 248 113 113;
+    --ready: 74 222 128;
+    --brand-50: 23 37 72;
+    --brand-100: 30 50 100;
+    --brand-700: 147 197 253;
+    --accent-50: 36 27 66;
+    --accent-700: 196 181 253;
+    --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 16px rgb(0 0 0 / 0.25);
+    --shadow-lift: 0 14px 34px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
+    --overlay: 0 0 0;
+  }
 }
 
 html,
@@ -23,27 +125,28 @@ body {
 }
 
 body {
-  background-color: #f1f5f9;
-  color: #0f172a;
+  background-color: rgb(var(--bg));
+  color: rgb(var(--ink));
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-tap-highlight-color: transparent;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  color: #0f172a;
+  color: rgb(var(--ink));
+  text-wrap: balance;
 }
 
 /* Visible keyboard focus everywhere — part of the quality floor. */
 *:focus-visible {
-  outline: 2px solid var(--brand);
+  outline: 2px solid rgb(var(--audio));
   outline-offset: 2px;
   border-radius: 6px;
 }
 
 input:focus, select:focus, textarea:focus { outline: none; }
-input, select, textarea { caret-color: var(--brand); }
-input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
+input, select, textarea { caret-color: rgb(var(--audio)); }
+input::placeholder, textarea::placeholder { color: rgb(var(--faint)); opacity: 1; }
 
 /* Prevent iOS auto-zoom on focus (font-size must be >= 16px) */
 @media (max-width: 640px) {
@@ -52,29 +155,31 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
 }
 
 ::selection {
-  background-color: rgba(37, 99, 235, 0.18);
-  color: #0f172a;
+  background-color: rgb(var(--audio) / 0.22);
+  color: rgb(var(--ink));
 }
 
 /* Quiet scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-color: rgb(var(--line-strong)) transparent;
 }
 *::-webkit-scrollbar { width: 9px; height: 9px; }
 *::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: rgb(var(--line-strong));
   border-radius: 6px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
-*::-webkit-scrollbar-thumb:hover { background: #94a3b8; background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: rgb(var(--faint)); background-clip: content-box; }
 *::-webkit-scrollbar-track { background: transparent; }
 
 @layer components {
-  /* ── Sidebar links (Windows 11 inspired) ──────────────────
+  /* ── Sidebar links ─────────────────────────────────────────
      Active state is a tinted pill PLUS a left accent bar, so the
-     selection is carried by shape as well as colour. */
+     selection is carried by shape as well as colour. The studio
+     uses brand blue; the admin section adds .sidebar-admin on its
+     nav and gets violet, so the two sections read as distinct. */
   .sidebar-link {
     display: flex;
     align-items: center;
@@ -83,17 +188,17 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
     border-radius: 0.75rem;
     font-size: 0.875rem;
     font-weight: 500;
-    color: #334155;
+    color: rgb(var(--muted));
     transition: background-color 0.15s, color 0.15s;
     position: relative;
   }
   .sidebar-link:hover {
-    background-color: #f1f5f9;
-    color: #0f172a;
+    background-color: rgb(var(--surface3));
+    color: rgb(var(--ink));
   }
   .sidebar-link.active {
-    background-color: #eff6ff;
-    color: #1d4ed8;
+    background-color: rgb(var(--brand-50));
+    color: rgb(var(--brand-700));
     font-weight: 600;
   }
   .sidebar-link.active::before {
@@ -104,27 +209,38 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
     bottom: 25%;
     width: 3px;
     border-radius: 9999px;
-    background-color: #2563eb;
+    background-color: rgb(var(--audio));
   }
-  .sidebar-link.active:hover { background-color: #dbeafe; }
+  .sidebar-link.active:hover { background-color: rgb(var(--brand-100)); }
 
-  /* Violet variant, for the video half of the product. */
-  .sidebar-link.active-video {
-    background-color: #f5f3ff;
-    color: #6d28d9;
+  /* Violet: the video half of the studio, and the whole admin section. */
+  .sidebar-link.active-video,
+  .sidebar-admin .sidebar-link.active {
+    background-color: rgb(var(--accent-50));
+    color: rgb(var(--accent-700));
   }
-  .sidebar-link.active-video::before { background-color: #7c3aed; }
-  .sidebar-link.active-video:hover { background-color: #ede9fe; }
+  .sidebar-link.active-video::before,
+  .sidebar-admin .sidebar-link.active::before { background-color: rgb(var(--video)); }
+  .sidebar-link.active-video:hover,
+  .sidebar-admin .sidebar-link.active:hover { background-color: rgb(var(--video) / 0.16); }
 
   /* ── Card ─────────────────────────────────────────────── */
   .glass-card {
-    background-color: #ffffff;
-    border: 1px solid #e2e8f0;
+    background-color: rgb(var(--surface));
+    border: 1px solid rgb(var(--line));
     border-radius: 1rem;
-    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 4px 12px rgba(15, 23, 42, 0.05);
+    box-shadow: var(--shadow-card);
     transition: border-color 0.2s, box-shadow 0.2s;
   }
-  .glass-card:hover { border-color: #cbd5e1; }
+  .glass-card:hover { border-color: rgb(var(--line-strong)); }
+
+  /* Top-light hairline on cards and dialogs: a physical edge, not a border. */
+  .hairline {
+    background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.7), transparent);
+  }
+  [data-theme="dark"] .hairline {
+    background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent);
+  }
 }
 
 @layer utilities {
@@ -143,15 +259,18 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
   /* Brand → accent gradient text, with a solid fallback so the text is
      ALWAYS visible even where background-clip:text fails (Firefox mobile). */
   .gradient-text {
-    color: #2563eb;
+    color: rgb(var(--audio));
     font-weight: 700;
   }
   @supports ((-webkit-background-clip: text) or (background-clip: text)) {
     .gradient-text {
-      background-image: linear-gradient(to right, #2563eb, #8b5cf6);
+      background-image: linear-gradient(to right, rgb(var(--brand-600)), rgb(var(--accent-500)));
       -webkit-background-clip: text;
       background-clip: text;
       -webkit-text-fill-color: transparent;
+    }
+    [data-theme="dark"] .gradient-text {
+      background-image: linear-gradient(to right, rgb(var(--brand-400)), rgb(var(--accent-400)));
     }
   }
 
@@ -160,8 +279,11 @@ input::placeholder, textarea::placeholder { color: #94a3b8; opacity: 1; }
     position: absolute;
     inset: 0;
     transform: translateX(-100%);
-    background-image: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
+    background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.45), transparent);
     animation: shimmer 1.6s infinite;
+  }
+  [data-theme="dark"] .shimmer::after {
+    background-image: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.06), transparent);
   }
 
   .stagger > * { animation: fade-up 0.3s ease-out both; }

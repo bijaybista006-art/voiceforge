@@ -187,7 +187,7 @@ export function SettingsForm({
             setPronunciationText(e.target.value);
             patch({ pronunciations: parsePronunciations(e.target.value) });
           }}
-          className="mt-3 w-full max-w-2xl resize-y rounded-xl border border-line bg-white px-3.5 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-brand-600"
+          className="mt-3 w-full max-w-2xl resize-y rounded-xl border border-line bg-surface px-3.5 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-brand-600"
         />
         <p className="mt-1.5 text-[12px] text-faint">
           {Object.keys(values.pronunciations ?? {}).length} of 200 entries. Takes effect on the
@@ -227,7 +227,7 @@ export function SettingsForm({
             value={values.nepaliModel ?? ""}
             placeholder="original (t3_mtl_nepali_merged)"
             onChange={(e) => patch({ nepaliModel: e.target.value.trim() })}
-            className="h-9 w-64 rounded-lg border border-line bg-white px-3 font-mono text-[12.5px] text-ink"
+            className="h-9 w-64 rounded-lg border border-line bg-surface px-3 font-mono text-[12.5px] text-ink"
             aria-label="Nepali model file"
           />
           {values.nepaliModel ? (
@@ -286,7 +286,7 @@ export function SettingsForm({
             setNepaliText(e.target.value);
             patch({ nepaliPronunciations: parsePronunciations(e.target.value) });
           }}
-          className="mt-3 w-full max-w-2xl resize-y rounded-xl border border-line bg-white px-3.5 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-brand-600"
+          className="mt-3 w-full max-w-2xl resize-y rounded-xl border border-line bg-surface px-3.5 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-brand-600"
         />
         <p className="mt-1.5 text-[12px] text-faint">
           {Object.keys(values.nepaliPronunciations ?? {}).length} of 200 entries.

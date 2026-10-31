@@ -296,7 +296,7 @@ $1redeploy. Registrations are stored there.
                 className={`rounded-xl border px-3.5 py-2 text-[13px] font-medium transition-colors disabled:opacity-50 ${
                   selected
                     ? "border-brand-600 bg-brand-50 text-brand-700"
-                    : "border-line bg-white text-muted hover:border-lineStrong hover:text-ink"
+                    : "border-line bg-surface text-muted hover:border-lineStrong hover:text-ink"
                 }`}
               >
                 {selected ? <IconCheck className="mr-1 inline h-3.5 w-3.5" /> : null}
@@ -443,7 +443,7 @@ $1redeploy. Registrations are stored there.
                     className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium transition-colors disabled:opacity-40 ${
                       on
                         ? "border-brand-600/30 bg-brand-50 text-brand-700"
-                        : "border-line bg-white text-faint line-through decoration-faint/60"
+                        : "border-line bg-surface text-faint line-through decoration-faint/60"
                     }`}
                   >
                     <span
@@ -524,7 +524,7 @@ $1redeploy. Registrations are stored there.
 }
 
 const PRIMARY_LINK =
-  "inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand-600 px-4 text-[13px] font-semibold text-white shadow-[0_4px_14px_-4px_rgba(37,99,235,.45)] transition-colors hover:bg-brand-700";
+  "inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand-600 px-4 text-[13px] font-semibold text-white shadow-[0_4px_14px_-4px_rgba(37,99,235,.45)] transition-colors hover:bg-[rgb(29_78_216)]";
 const MISSING_LINK =
   "inline-flex h-9 items-center gap-1.5 rounded-xl border border-dashed border-lineStrong px-4 text-[13px] font-medium text-muted transition-colors hover:border-brand-600 hover:text-brand-700";
 const QUIET_LINK = "font-medium text-brand-700 underline decoration-brand-600/30 underline-offset-2 hover:decoration-brand-600";

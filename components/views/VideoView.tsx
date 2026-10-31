@@ -225,7 +225,7 @@ export function VideoView() {
           </Button>
           <Link
             href="/admin/presenters"
-            className="inline-flex h-9 items-center rounded-xl border border-line bg-white px-4 text-[13px] font-medium text-ink transition-colors hover:border-lineStrong"
+            className="inline-flex h-9 items-center rounded-xl border border-line bg-surface px-4 text-[13px] font-medium text-ink transition-colors hover:border-lineStrong"
           >
             Manage presenters
           </Link>
@@ -265,7 +265,7 @@ export function VideoView() {
                 onChange={(e) => setText(e.target.value)}
                 rows={6}
                 placeholder="Hello everyone, and welcome back to the channel. Today I'm going to show you…"
-                className="w-full resize-y rounded-xl border border-line bg-white px-4 py-3 text-[14px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-brand-600"
+                className="w-full resize-y rounded-xl border border-line bg-surface px-4 py-3 text-[14px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-brand-600"
               />
               <p
                 className={`mt-1.5 text-right font-mono text-[11.5px] tabular-nums ${

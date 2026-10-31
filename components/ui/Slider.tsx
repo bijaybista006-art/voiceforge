@@ -48,9 +48,9 @@ export function Slider({
         onChange={(e) => onChange(Number(e.target.value))}
         // Track is painted with a gradient so the filled portion reads clearly.
         style={{
-          background: `linear-gradient(90deg, var(--brand) ${pct}%, #e2e8f0 ${pct}%)`,
+          background: `linear-gradient(90deg, var(--brand) ${pct}%, rgb(var(--line-strong)) ${pct}%)`,
         }}
-        className="h-1.5 w-full cursor-pointer appearance-none rounded-full accent-[#2563eb] disabled:cursor-not-allowed disabled:opacity-40 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-audio [&::-webkit-slider-thumb]:shadow-[0_1px_4px_rgba(15,23,42,.3)]"
+        className="h-1.5 w-full cursor-pointer appearance-none rounded-full accent-[rgb(37_99_235)] disabled:cursor-not-allowed disabled:opacity-40 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-audio [&::-webkit-slider-thumb]:shadow-[0_1px_4px_rgba(15,23,42,.3)]"
       />
       {hint ? <p className="mt-1.5 text-[11.5px] leading-snug text-faint">{hint}</p> : null}
     </div>
