@@ -252,6 +252,7 @@ export function ClipView() {
                 description="Say what is in it, what moves, how the camera moves, the light and the style."
               />
               <textarea
+                aria-label="Scene description"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={5}

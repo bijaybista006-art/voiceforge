@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 /**
  * An on/off switch. Looks like a switch (a track and a knob), behaves like
  * one for assistive tech (role="switch" + aria-checked), and always carries a
@@ -25,6 +27,9 @@ export function Toggle({
   hideLabel?: boolean;
 }) {
   const on = tone === "video" ? "bg-accent-600" : "bg-brand-600";
+  const uid = useId();
+  const labelId = `${uid}-label`;
+  const descId = `${uid}-desc`;
   return (
     <label
       className={`inline-flex items-start gap-2.5 ${disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
@@ -36,6 +41,8 @@ export function Toggle({
         role="switch"
         aria-checked={checked}
         aria-label={hideLabel ? label : undefined}
+        aria-labelledby={hideLabel ? undefined : labelId}
+        aria-describedby={description && !hideLabel ? descId : undefined}
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-150 disabled:cursor-not-allowed ${
@@ -51,9 +58,13 @@ export function Toggle({
       </button>
       {hideLabel ? null : (
         <span className="min-w-0">
-          <span className="block text-[13px] font-medium text-ink">{label}</span>
+          <span id={labelId} className="block text-[13px] font-medium text-ink">
+            {label}
+          </span>
           {description ? (
-            <span className="mt-0.5 block text-[12px] leading-snug text-muted">{description}</span>
+            <span id={descId} className="mt-0.5 block text-[12px] leading-snug text-muted">
+              {description}
+            </span>
           ) : null}
         </span>
       )}

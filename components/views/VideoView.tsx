@@ -264,6 +264,7 @@ export function VideoView() {
                 description="An intro or an outro — a few sentences. Nepali, English or a mix is fine."
               />
               <textarea
+                aria-label="What the presenter says"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={6}

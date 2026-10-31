@@ -42,7 +42,7 @@ function SetupRow({ ok, title, detail, how }: { ok: boolean; title: string; deta
       >
         {ok ? <IconCheck className="h-3.5 w-3.5" /> : <IconAlert className="h-3.5 w-3.5" />}
       </span>
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <p className="text-[14px] font-semibold text-ink">
           {title}{" "}
           <span className={`ml-1 text-[12px] font-medium ${ok ? "text-ready" : "text-live"}`}>
@@ -50,7 +50,7 @@ function SetupRow({ ok, title, detail, how }: { ok: boolean; title: string; deta
           </span>
         </p>
         <p className="mt-0.5 text-[13px] leading-relaxed text-muted">{detail}</p>
-        {!ok ? <p className="mt-1.5 text-[12.5px] leading-relaxed text-faint">{how}</p> : null}
+        {!ok ? <p className="mt-1.5 text-[12.5px] leading-relaxed text-faint [overflow-wrap:anywhere]">{how}</p> : null}
       </div>
     </li>
   );
@@ -147,7 +147,7 @@ export default async function AdminDashboard() {
         />
       </div>
 
-      <div className="mb-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="mb-6 grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         {/* ---------- recent jobs ---------- */}
         <section aria-labelledby="dash-jobs" className="glass-card overflow-hidden">
           <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
