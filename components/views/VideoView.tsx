@@ -13,6 +13,8 @@ import { Card, CardHeader } from "../ui/Card";
 import { CopyId } from "../ui/CopyId";
 import { IconDownload, IconRefresh, IconSparkle, IconVideo } from "../ui/Icons";
 import { Select } from "../ui/Select";
+import { Disclosure, PageHeader } from "../ui/Kit";
+import { useIsAdmin } from "../studio/StudioContext";
 
 const MAX_CHARS = 900;
 const LAST_CLIP_KEY = "vf:presenter-clip";
@@ -68,6 +70,7 @@ export function VideoView() {
   const { status, failed, reload } = usePresenterStatus();
   const voices = useApp((s) => s.voices);
   const connect = useApp((s) => s.connect);
+  const isAdmin = useIsAdmin();
 
   const [text, setText] = useState("");
   const [voiceId, setVoiceId] = useState("");
@@ -152,7 +155,9 @@ export function VideoView() {
         : !presenter
           ? "Choose a presenter."
           : presenterReady && !presenterReady.ready
-            ? (presenterReady.reason ?? "This presenter can't be rendered right now.")
+            ? isAdmin
+              ? (presenterReady.reason ?? "This presenter can't be rendered right now.")
+              : "This presenter can't be made right now. Try again a little later."
             : null;
 
   async function generate() {
@@ -207,30 +212,27 @@ export function VideoView() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] px-4 py-6 sm:px-6 lg:py-8">
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-ink">
-            Presenter Video
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Type a line, choose who says it and in which voice, and get a lip-synced clip for your
-            intro or outro.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button size="sm" onClick={reload}>
-            <IconRefresh className="h-3.5 w-3.5" />
-            Refresh
-          </Button>
-          <Link
-            href="/admin/presenters"
-            className="inline-flex h-9 items-center rounded-xl border border-line bg-surface px-4 text-[13px] font-medium text-ink transition-colors hover:border-lineStrong"
-          >
-            Manage presenters
-          </Link>
-        </div>
-      </header>
+    <div className="mx-auto w-full max-w-[1400px] px-4 py-8 sm:px-6 lg:py-10">
+      <PageHeader
+        title="Presenter Video"
+        description="Type a line, choose who says it and in which voice, and get a lip-synced clip for your intro or outro."
+        action={
+          <>
+            <Button size="sm" onClick={reload}>
+              <IconRefresh className="h-3.5 w-3.5" />
+              Refresh
+            </Button>
+            {isAdmin ? (
+              <Link
+                href="/admin/presenters"
+                className="inline-flex h-8 items-center rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-ink transition-colors hover:border-lineStrong"
+              >
+                Manage presenters
+              </Link>
+            ) : null}
+          </>
+        }
+      />
 
       {failed ? (
         <Card>
@@ -250,7 +252,8 @@ export function VideoView() {
             {status.hint ? (
               <Card>
                 <p className="text-sm text-ink">
-                  <strong>Storage isn&apos;t ready.</strong> {status.hint}
+                  <strong>Saving isn&apos;t available right now.</strong>{" "}
+                  {isAdmin ? status.hint : "Clips can't be stored until your admin finishes setup."}
                 </p>
               </Card>
             ) : null}
@@ -283,9 +286,9 @@ export function VideoView() {
               />
               {voices.length === 0 ? (
                 <p className="text-sm text-muted">
-                  No voices yet. Add one in{" "}
-                  <Link href="/admin/voices" className="text-brand-700 underline">
-                    Admin → Voices
+                  No voices yet. Add one under{" "}
+                  <Link href="/studio/speech" className="text-brand-700 underline">
+                    Text to Speech → Voice
                   </Link>
                   .
                 </p>
@@ -301,7 +304,7 @@ export function VideoView() {
                   </Select>
                   {voice ? (
                     <div className="mt-2.5 flex flex-wrap items-center gap-3">
-                      <CopyId id={voice.id} label="Voice" />
+                      {isAdmin ? <CopyId id={voice.id} label="Voice" /> : null}
                       <audio src={voice.audioUrl} controls preload="none" className="h-8 max-w-[220px]" />
                     </div>
                   ) : null}
@@ -316,11 +319,17 @@ export function VideoView() {
               />
               {presenters.length === 0 ? (
                 <p className="text-sm text-muted">
-                  No presenters yet. Add a recording or an image in{" "}
-                  <Link href="/admin/presenters" className="text-video underline">
-                    Admin → Presenters
-                  </Link>
-                  .
+                  {isAdmin ? (
+                    <>
+                      No presenters yet. Add a recording or an image in{" "}
+                      <Link href="/admin/presenters" className="text-video underline">
+                        Admin → Presenters
+                      </Link>
+                      .
+                    </>
+                  ) : (
+                    "No presenters yet. Ask your admin to add one."
+                  )}
                 </p>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -403,25 +412,24 @@ export function VideoView() {
               )}
             </Card>
 
-            <Card>
-              <CardHeader
-                title="Use it from n8n"
-                description="The same operation, by id. Copy the ids from the cards on the left."
-              />
-              <pre className="overflow-x-auto rounded-xl bg-surface3 px-4 py-3 font-mono text-[11.5px] leading-relaxed text-ink">
-                {`POST /api/v1/presenter
+            {/* Automation details are for the admin only: ids and API calls. */}
+            {isAdmin ? (
+              <Disclosure title="Use it from n8n" hint="The same operation through the API, for automations.">
+                <pre className="overflow-x-auto rounded-xl bg-surface3 px-4 py-3 font-mono text-[11.5px] leading-relaxed text-ink">
+                  {`POST /api/v1/presenter
 {
   "text": "Hello everyone, welcome back…",
   "voice_id": "${voice?.id ?? "<voice id>"}",
   "presenter_id": "${presenter?.id ?? "<presenter id>"}"
 }`}
-              </pre>
-              <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
-                It returns a job. Poll <code className="font-mono">/api/v1/jobs/&#123;id&#125;</code>{" "}
-                until it is done, then pass its <code className="font-mono">video_url</code> to the
-                video render as the intro or outro clip.
-              </p>
-            </Card>
+                </pre>
+                <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
+                  It returns a job. Poll <code className="font-mono">/api/v1/jobs/&#123;id&#125;</code> until it is
+                  done, then pass its <code className="font-mono">video_url</code> to the video render as the intro
+                  or outro clip.
+                </p>
+              </Disclosure>
+            ) : null}
           </div>
         </div>
       )}
@@ -440,6 +448,7 @@ function PresenterChoice({
   readiness: { ready: boolean; provider?: string; reason?: string };
   onSelect(): void;
 }) {
+  const isAdmin = useIsAdmin();
   const kindLabel: Record<PresenterKind, string> = { recording: "Recording", image: "Still image" };
   return (
     <div
@@ -482,7 +491,7 @@ function PresenterChoice({
         </div>
       </button>
       <div className="px-3 pb-3 pt-2">
-        <CopyId id={presenter.id} label="Presenter" />
+        {isAdmin ? <CopyId id={presenter.id} label="Presenter" /> : null}
       </div>
     </div>
   );
