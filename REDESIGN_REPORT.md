@@ -1,6 +1,6 @@
 # VoiceForge UI v2: redesign report
 
-Branch `redesign/ui-v2`, merged into `main` through a pull request. The pre-redesign `main` is tagged **`pre-redesign-backup`**. The plan this followed is in [REDESIGN_PLAN.md](REDESIGN_PLAN.md). Screenshots of every page (light and dark, desktop and phone) are in **[docs/redesign-screenshots/](docs/redesign-screenshots/)**.
+Branch `redesign/ui-v2`, merged into `main` through a pull request. The pre-redesign `main` (commit `5a88d3125ccecfb4d77bbe35ba302a3291ae7000`) is preserved as **`pre-redesign-backup`**. See [Rollback](#6-rollback) for why that is a branch rather than a tag. The plan this followed is in [REDESIGN_PLAN.md](REDESIGN_PLAN.md). Screenshots of every page (light and dark, desktop and phone) are in **[docs/redesign-screenshots/](docs/redesign-screenshots/)**.
 
 **In one line:** VoiceForge now has two sections with real URLs. The **Studio** is for making things and the **Admin** is for running the platform. They share one design system with Light, Dark and System themes. The backend, API, database and routing were not changed.
 
@@ -244,12 +244,21 @@ The only new *use* of an existing endpoint is that **My Library** calls `GET /ap
 
 ## 6. Rollback
 
-The pre-redesign `main` is preserved as the tag **`pre-redesign-backup`**:
+**The backup.** The pre-redesign `main` is commit **`5a88d3125ccecfb4d77bbe35ba302a3291ae7000`** (the merge of PR #5).
+- The brief asked for a tag `pre-redesign-backup`. The tag was created, but this environment's git connection silently drops tag pushes: `git push` reported "Everything up-to-date" four times and the tag never reached GitHub. None of the available GitHub tools can create a tag either.
+- So the backup was pushed as a **branch with the same name, `pre-redesign-backup`**, pointing at exactly that commit. Branches are pushed normally, so it is safely on GitHub. Don't delete it.
+
+To also make it a real tag (one-off, from your own machine):
 
 ```bash
-git fetch origin --tags
-git show --no-patch pre-redesign-backup
+git fetch origin pre-redesign-backup
+git tag -a pre-redesign-backup-tag 5a88d3125ccecfb4d77bbe35ba302a3291ae7000 -m "main before UI v2"
+git push origin pre-redesign-backup-tag
 ```
+
+(The tag gets a different name so `pre-redesign-backup` doesn't refer to both a branch and a tag.)
+
+Every command below uses the commit SHA, so it works whether or not the tag exists.
 
 **Option A: revert the merge (recommended; keeps history and is safe for Vercel).** This finds the redesign's merge commit on `main` and reverts it:
 
@@ -263,12 +272,12 @@ git push origin main
 
 Vercel redeploys `main` automatically. To bring the redesign back later, revert that revert commit.
 
-**Option B: reset `main` to the backup tag (rewrites history).** Use this only if A is not possible. It also removes anything merged after the redesign, including PR #6's notebook settings, which came in with it.
+**Option B: reset `main` to the backup (rewrites history).** Use this only if A is not possible. It also removes anything merged after the redesign, including PR #6's notebook settings, which came in with it.
 
 ```bash
 git checkout main
-git fetch origin --tags
-git reset --hard pre-redesign-backup
+git fetch origin
+git reset --hard 5a88d3125ccecfb4d77bbe35ba302a3291ae7000
 git push --force-with-lease origin main
 ```
 
