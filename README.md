@@ -49,9 +49,8 @@ Vercel hosts the app and nothing else: there is no Vercel storage product to add
 1. Open [colab.research.google.com](https://colab.research.google.com).
 2. **File → Upload notebook** → choose `colab/voiceforge_server.ipynb` from this repo.
 3. **Runtime → Change runtime type → T4 GPU** → Save. *(This is free. If you skip it, nothing works.)*
-4. **Runtime → Run all.**
-5. Wait. Cell 1 installs (~2 min). Cell 2 loads the models (~2–4 min).
-6. Cell 3 opens a tunnel and **registers itself with your app**. It prints:
+4. **Runtime → Run all.** That is the only click — no "Restart session".
+5. Wait. Cell 1 installs (~2 min). Cell 2 starts everything in a fresh Python process: it loads the models (~2–4 min), opens a tunnel and **registers itself with your app**. It prints:
 
 ```
 ==============================================================
@@ -60,6 +59,8 @@ Vercel hosts the app and nothing else: there is no Vercel storage product to add
 ```
 
 Before the first run, paste your app URL and `REGISTRATION_TOKEN` into **Cell 0** — Admin → Backends shows a copy-ready snippet with both.
+
+**Next time, reopen your saved copy** (Colab: *File → Save a copy in Drive* once; Kaggle: *Your Work*). The platform remembers its access to your secrets, so it stops asking — and Cell 1 prints a notice when a newer notebook is available. If the one-click start ever misbehaves, set `ONE_CLICK_START = False` in Cell 0 to use the classic cells (those need *Runtime → Restart session* after Cell 1).
 
 **Leave the Colab tab open.** Close it and your backend dies. The tunnel URL is new every session, but you never see it: the notebook re-registers and heartbeats every 60 seconds.
 

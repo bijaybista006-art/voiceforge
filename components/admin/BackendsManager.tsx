@@ -527,7 +527,7 @@ function ConnectInstructions({ appUrl, tokenSet }: { appUrl: string; tokenSet: b
       <div className="border-b border-line bg-surface2 px-5 py-3.5">
         <h2 className="text-[13px] font-semibold text-ink">Connect Colab or Kaggle</h2>
         <p className="mt-0.5 text-[12.5px] text-muted">
-          You still press Run All — but nothing else is manual. The notebook registers its own URL.
+          One Run All — no restart, nothing to copy. The notebook registers its own URL.
         </p>
       </div>
       <ol className="space-y-3 px-5 py-4 text-[13px] leading-relaxed text-muted">
@@ -590,8 +590,18 @@ function ConnectInstructions({ appUrl, tokenSet }: { appUrl: string; tokenSet: b
         <li className="flex gap-3">
           <span className="font-mono text-[11px] text-faint">3</span>
           <span>
-            <strong>Run All</strong>. Within about a minute it appears above as{" "}
-            <span className="font-medium text-ready">Online</span> — no URL to copy.
+            <strong>Run All</strong> — no &ldquo;Restart session&rdquo; needed. Once the models load (a
+            few minutes) it appears above as <span className="font-medium text-ready">Online</span>.
+            Leave the tab open: the last cell keeps running.
+          </span>
+        </li>
+        <li className="flex gap-3">
+          <span className="font-mono text-[11px] text-faint">4</span>
+          <span>
+            <strong>Next time, reopen your saved copy</strong> instead of clicking the buttons
+            above (Colab: <em>File → Save a copy in Drive</em> once; Kaggle keeps it in{" "}
+            <em>Your Work</em>). The platform then remembers its access to your secrets, so it stops
+            asking. The notebook prints a notice when a newer version is available here.
           </span>
         </li>
       </ol>

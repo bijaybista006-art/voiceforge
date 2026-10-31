@@ -387,9 +387,8 @@ BACKEND_SECRET       the other value you set in Vercel</code></pre></div>
       </div>
     </li>
     <li>Run <strong>Cell 0</strong>, then <strong>Cell 1</strong>. Cell 1 takes 3–10 minutes and prints a wall of red <code>pip</code> conflict lines about jax, opencv and cupy — <strong>expected and harmless</strong>; that's Colab's preinstalled data-science stack, which this backend never imports.</li>
-    <li><strong>Runtime → Restart session.</strong> This is required: the kernel is still holding the numpy it imported at startup.</li>
-    <li>Run <strong>Cell 0</strong> again, then <strong>Cell 2</strong>. It should end with <code>models ready: ['chatterbox']</code>.</li>
-    <li>Run <strong>Cell 3</strong>. It opens a tunnel and registers itself.</li>
+    <li><strong>Cell 2</strong> runs straight after — no restart needed. It starts the server in a fresh Python process, loads the models, opens a tunnel and registers itself; it ends with <code>REGISTERED</code> and keeps running. (Easiest: <strong>Runtime → Run all</strong>.)</li>
+    <li>Next time, reopen this same copy (<em>File → Save a copy in Drive</em> once): Colab then remembers the secret access. Cell 1 tells you when a newer notebook exists.</li>
   </ol>
   <p><a class="btn" href="https://colab.research.google.com/github/bijaybista006-art/voiceforge/blob/main/colab/voiceforge_server.ipynb">Open the notebook in Colab</a></p>
   <div class="ok">
@@ -418,7 +417,7 @@ BACKEND_SECRET       the other value you set in Vercel</code></pre></div>
       </div>
     </li>
     <li><strong>Add-ons → Secrets</strong> — add <code>VOICEFORGE_APP_URL</code>, <code>REGISTRATION_TOKEN</code> and <code>BACKEND_SECRET</code>, and attach each to the notebook. Leave Cell 0 untouched; it reads them automatically, this session and every future one.</li>
-    <li>Run Cell 0 → Cell 1 → <strong>restart the session</strong> → Cell 0 → Cell 2 → Cell 3, exactly as for Colab.</li>
+    <li><strong>Run all</strong>, exactly as for Colab — no restart needed.</li>
   </ol>
   <div class="note">
     <p>Kaggle gives you <strong>30 GPU-hours a week</strong> and longer sessions than Colab. Your voice library is shared, so a voice added anywhere works on both.</p>
@@ -729,7 +728,7 @@ modal token new</code></pre></div>
     <li><strong>Admin → Backends → Open in Colab</strong> (or Kaggle).</li>
     <li>Check the GPU is still T4.</li>
     <li>Re-paste Cell 0 if it was cleared. Kaggle Secrets users skip this.</li>
-    <li>Cell 0 → Cell 1 → <strong>Restart session</strong> → Cell 0 → Cell 2 → Cell 3.</li>
+    <li><strong>Run all.</strong> No restart needed. (Reopening your saved copy instead of the button skips the secret-access prompt.)</li>
   </ol>
   <div class="ok">
     <p><span class="label">Nothing else to redo.</span> New tunnel, registered automatically. Your voices, API keys and job history are on the server and untouched. No re-cloning, ever.</p>
@@ -763,7 +762,7 @@ modal token new</code></pre></div>
     </tr>
     <tr>
       <td><code>numpy is 2.5.3, need 2.2.x</code> or <code>Numba needs NumPy 2.2 or less</code></td>
-      <td>Re-run Cell 1, then <strong>Runtime → Restart session</strong>, then Cell 0 and Cell 2. The kernel was holding the numpy it imported at startup.</td>
+      <td><strong>Runtime → Disconnect and delete runtime</strong>, then Run all on a fresh one. (Classic cells only: re-run Cell 1, then <strong>Runtime → Restart session</strong>, then Cell 0 and the classic cells.)</td>
     </tr>
     <tr>
       <td><code>AssertionError: No GPU</code></td>
