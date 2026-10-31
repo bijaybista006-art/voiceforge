@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { notebookLinks, type NotebookLinks } from "@/lib/notebookLinks";
 import { toast } from "@/lib/toast";
 import type { ActiveBackend, BackendProvider, BackendView } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
@@ -19,6 +20,8 @@ import {
 interface Payload {
   backends: BackendView[];
   active: ActiveBackend;
+  /** Absent only from a server older than this page. */
+  notebooks?: NotebookLinks;
   storageConnected: boolean;
   registrationTokenSet: boolean;
   backendSecretSet: boolean;
@@ -49,14 +52,12 @@ const HEALTH_STYLE: Record<BackendView["health"], { dot: string; text: string; l
 };
 
 /**
- * One-click reopen. Colab's /github/ route loads the notebook straight from
- * this repo, so reconnecting after a session dies is a click plus Run All
- * rather than hunting for the file.
+ * One-click reopen. The everyday buttons open your own saved notebooks
+ * (Settings → Notebooks), in your dedicated Google account; the fresh-copy
+ * links load the latest notebook straight from this repo. See
+ * lib/notebookLinks.ts. Used before the first load answers, too.
  */
-const REPO = "bijaybista006-art/voiceforge";
-const NOTEBOOK = "colab/voiceforge_server.ipynb";
-const COLAB_URL = `https://colab.research.google.com/github/${REPO}/blob/main/${NOTEBOOK}`;
-const KAGGLE_URL = `https://www.kaggle.com/kernels/welcome?src=https://github.com/${REPO}/blob/main/${NOTEBOOK}`;
+const FALLBACK_NOTEBOOKS: NotebookLinks = notebookLinks({});
 
 /**
  * The per-backend feature switches (absent = on). `videoEnabled` is the
@@ -513,12 +514,30 @@ $1redeploy. Registrations are stored there.
         </div>
       ) : null}
 
-      <ConnectInstructions appUrl={appUrl} tokenSet={data.registrationTokenSet} />
+      <ConnectInstructions
+        appUrl={appUrl}
+        tokenSet={data.registrationTokenSet}
+        notebooks={data.notebooks ?? FALLBACK_NOTEBOOKS}
+      />
     </div>
   );
 }
 
-function ConnectInstructions({ appUrl, tokenSet }: { appUrl: string; tokenSet: boolean }) {
+const PRIMARY_LINK =
+  "inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand-600 px-4 text-[13px] font-semibold text-white shadow-[0_4px_14px_-4px_rgba(37,99,235,.45)] transition-colors hover:bg-brand-700";
+const MISSING_LINK =
+  "inline-flex h-9 items-center gap-1.5 rounded-xl border border-dashed border-lineStrong px-4 text-[13px] font-medium text-muted transition-colors hover:border-brand-600 hover:text-brand-700";
+const QUIET_LINK = "font-medium text-brand-700 underline decoration-brand-600/30 underline-offset-2 hover:decoration-brand-600";
+
+function ConnectInstructions({
+  appUrl,
+  tokenSet,
+  notebooks,
+}: {
+  appUrl: string;
+  tokenSet: boolean;
+  notebooks: NotebookLinks;
+}) {
   const [copied, setCopied] = useState(false);
   const snippet = `VOICEFORGE_APP_URL = "${appUrl}"\nREGISTRATION_TOKEN = "<your REGISTRATION_TOKEN>"`;
 
@@ -535,35 +554,70 @@ function ConnectInstructions({ appUrl, tokenSet }: { appUrl: string; tokenSet: b
           <span className="font-mono text-[11px] text-faint">1</span>
           <div className="min-w-0 flex-1">
             <span>
-              Open the notebook and turn on a <strong>T4 GPU</strong> (Kaggle: also switch Internet
-              on).
+              Open your saved notebook and check it has a <strong>T4 GPU</strong> (Kaggle: GPU T4 x2,
+              Internet on).
             </span>
             <div className="mt-2 flex flex-wrap gap-2">
-              <a
-                href={COLAB_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-[13px] font-medium text-ink transition-colors hover:border-lineStrong"
-              >
-                <IconLink className="h-3.5 w-3.5" />
-                Open in Colab
-              </a>
-              <a
-                href={KAGGLE_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-white px-3 text-[13px] font-medium text-ink transition-colors hover:border-lineStrong"
-              >
-                <IconLink className="h-3.5 w-3.5" />
-                Open in Kaggle
-              </a>
+              {notebooks.colab.mine ? (
+                <a href={notebooks.colab.mine} target="_blank" rel="noreferrer" className={PRIMARY_LINK}>
+                  <IconLink className="h-3.5 w-3.5" />
+                  Open my Colab notebook
+                </a>
+              ) : (
+                <a href="/admin/settings" className={MISSING_LINK}>
+                  Add your Colab notebook in Settings
+                </a>
+              )}
+              {notebooks.kaggle.mine ? (
+                <a href={notebooks.kaggle.mine} target="_blank" rel="noreferrer" className={PRIMARY_LINK}>
+                  <IconLink className="h-3.5 w-3.5" />
+                  Open my Kaggle notebook
+                </a>
+              ) : (
+                <a href="/admin/settings" className={MISSING_LINK}>
+                  Add your Kaggle notebook in Settings
+                </a>
+              )}
             </div>
+            <p className="mt-2 text-[12px] leading-relaxed text-muted">
+              {notebooks.googleAccount ? (
+                <>
+                  Colab opens as <span className="font-mono text-ink">{notebooks.googleAccount}</span>{" "}
+                  (sign in to it in this browser once). Kaggle uses the account signed in on kaggle.com.
+                </>
+              ) : (
+                <>
+                  Colab opens in this browser&apos;s default Google account.{" "}
+                  <a href="/admin/settings" className={QUIET_LINK}>
+                    Set your dedicated Gmail in Settings
+                  </a>
+                  .
+                </>
+              )}
+            </p>
+            <p className="mt-1 text-[12px] leading-relaxed text-muted">
+              Fresh copy from GitHub, only for first-time setup or when the notebook says a newer one
+              exists:{" "}
+              <a href={notebooks.colab.fresh} target="_blank" rel="noreferrer" className={QUIET_LINK}>
+                Colab
+              </a>{" "}
+              ·{" "}
+              <a href={notebooks.kaggle.fresh} target="_blank" rel="noreferrer" className={QUIET_LINK}>
+                Kaggle
+              </a>
+              . Save it (Colab: File → Save a copy in Drive; Kaggle: Save Version → Quick Save) and
+              paste its address into Settings.
+            </p>
           </div>
         </li>
         <li className="flex gap-3">
           <span className="font-mono text-[11px] text-faint">2</span>
           <div className="min-w-0 flex-1">
-            <span>Paste these two values into Cell 0:</span>
+            <span>
+              First time only: store these as secrets in that notebook (Colab: key icon, Notebook access
+              on; Kaggle: Add-ons → Secrets, ticked), together with <code className="font-mono">BACKEND_SECRET</code>.
+              Pasting them into Cell 0 also works, but secrets are never saved in the notebook file.
+            </span>
             <div className="mt-2 flex items-start gap-2">
               <pre className="min-w-0 flex-1 overflow-x-auto rounded-xl border border-line bg-surface2 px-3.5 py-2.5 font-mono text-[11.5px] text-ink">
                 {snippet}
@@ -598,10 +652,10 @@ function ConnectInstructions({ appUrl, tokenSet }: { appUrl: string; tokenSet: b
         <li className="flex gap-3">
           <span className="font-mono text-[11px] text-faint">4</span>
           <span>
-            <strong>Next time, reopen your saved copy</strong> instead of clicking the buttons
-            above (Colab: <em>File → Save a copy in Drive</em> once; Kaggle keeps it in{" "}
-            <em>Your Work</em>). The platform then remembers its access to your secrets, so it stops
-            asking. The notebook prints a notice when a newer version is available here.
+            <strong>Every time, use &ldquo;Open my … notebook&rdquo;.</strong> Your saved copy remembers
+            its access to your secrets, so it opens without asking. When the notebook prints{" "}
+            <em>A NEWER NOTEBOOK IS AVAILABLE</em>, take a fresh copy with the links in step 1, save it
+            and paste its address into Settings.
           </span>
         </li>
       </ol>

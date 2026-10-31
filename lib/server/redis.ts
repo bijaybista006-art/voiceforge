@@ -51,8 +51,12 @@ export const NEPALI_MODEL_FILE = /^[\w.-]+\.safetensors(@(0?\.\d{1,2}|1(\.0+)?))
 export interface PlatformSettings {
   /** Days before generated audio is purged from Blob. */
   retentionDays: number;
-  /** Notebook URL shown in the Backends connect dialog. */
+  /** Your saved Kaggle notebook ("Open my Kaggle notebook" on Admin → Backends). */
   kaggleNotebookUrl: string;
+  /** Your saved Colab notebook, usually https://colab.research.google.com/drive/<id>. */
+  colabNotebookUrl: string;
+  /** The dedicated Google account the Colab buttons open in (Google's `authuser`). */
+  googleAccount: string;
   defaultModel: "chatterbox" | "qwen3";
   defaultLanguage: string;
   /** English words and how to write them so the model says them right. */
@@ -82,6 +86,8 @@ export interface PlatformSettings {
 export const DEFAULT_SETTINGS: PlatformSettings = {
   retentionDays: 7,
   kaggleNotebookUrl: "",
+  colabNotebookUrl: "",
+  googleAccount: "",
   defaultModel: "chatterbox",
   defaultLanguage: "en",
   pronunciations: {},

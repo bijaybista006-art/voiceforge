@@ -126,11 +126,41 @@ export function SettingsForm({
         </div>
       </Field>
 
+      {/* Notebooks: what the "Open my … notebook" buttons on Admin → Backends open. */}
       <Field
-        label="Kaggle notebook URL"
-        hint="Shown in the Backends connect dialog once that page exists."
+        label="Google account for Colab"
+        hint="The dedicated Gmail your GPU notebooks live in. Colab buttons open in this account when several are signed in."
       >
         <Input
+          id="settings-google-account"
+          type="email"
+          placeholder="voiceforge.gpu@gmail.com"
+          value={values.googleAccount}
+          onChange={(e) => patch({ googleAccount: e.target.value })}
+          className="font-mono text-xs"
+        />
+      </Field>
+
+      <Field
+        label="My Colab notebook"
+        hint="Your saved copy. In Colab: File → Save a copy in Drive, then paste the address from the browser bar."
+      >
+        <Input
+          id="settings-colab-notebook"
+          type="url"
+          placeholder="https://colab.research.google.com/drive/…"
+          value={values.colabNotebookUrl}
+          onChange={(e) => patch({ colabNotebookUrl: e.target.value })}
+          className="font-mono text-xs"
+        />
+      </Field>
+
+      <Field
+        label="My Kaggle notebook"
+        hint="Your saved copy, opened in the account signed in on kaggle.com. Paste its address from the browser bar."
+      >
+        <Input
+          id="settings-kaggle-notebook"
           type="url"
           placeholder="https://www.kaggle.com/code/…"
           value={values.kaggleNotebookUrl}

@@ -60,7 +60,7 @@ Vercel hosts the app and nothing else: there is no Vercel storage product to add
 
 Before the first run, paste your app URL and `REGISTRATION_TOKEN` into **Cell 0** — Admin → Backends shows a copy-ready snippet with both.
 
-**Next time, reopen your saved copy** (Colab: *File → Save a copy in Drive* once; Kaggle: *Your Work*). The platform remembers its access to your secrets, so it stops asking — and Cell 1 prints a notice when a newer notebook is available. If the one-click start ever misbehaves, set `ONE_CLICK_START = False` in Cell 0 to use the classic cells (those need *Runtime → Restart session* after Cell 1).
+**Open it from VoiceForge every time.** Save the notebook once (Colab: *File → Save a copy in Drive*; Kaggle: *Save Version → Quick Save*), then paste its address into **Admin → Settings → My Colab notebook / My Kaggle notebook**, and your dedicated Gmail into **Google account for Colab**. Admin → Backends then shows **Open my Colab notebook** and **Open my Kaggle notebook**: your saved copies, so the platform remembers its access to your secrets and stops asking, and Colab opens in that Gmail (Google's `authuser`, which works when that account is signed in in the same browser). Kaggle has no account switch in links; it uses whoever is signed in on kaggle.com. Cell 1 prints a notice when a newer notebook is available; only then use the fresh-copy links and save the new copy's address in Settings. If the one-click start ever misbehaves, set `ONE_CLICK_START = False` in Cell 0 to use the classic cells (those need *Runtime → Restart session* after Cell 1).
 
 **Leave the Colab tab open.** Close it and your backend dies. The tunnel URL is new every session, but you never see it: the notebook re-registers and heartbeats every 60 seconds.
 
