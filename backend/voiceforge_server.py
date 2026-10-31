@@ -1893,6 +1893,35 @@ def _load_presenter_module():
         return importlib.import_module("voiceforge_presenter")
 
 
+WAN_FILES = ("__init__.py", "settings.py", "engine.py", "install.py", "service.py")
+
+
+def _load_wan_service():
+    """Import backend/wan/service.py, fetching the package first if absent.
+
+    Same reason as _load_presenter_module: a notebook saved before this
+    package existed does not download it, so the server fetches the files
+    from the place the notebook fetches everything else.
+    """
+    import importlib
+
+    try:
+        return importlib.import_module("backend.wan.service")
+    except ImportError:
+        pass
+    folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wan")
+    os.makedirs(folder, exist_ok=True)
+    for name in WAN_FILES:
+        with urllib.request.urlopen(f"{RAW_BASE}/wan/{name}", timeout=60) as r:  # noqa: S310
+            data = r.read()
+        if name != "__init__.py" and len(data) < 1000:
+            raise RuntimeError(f"backend/wan/{name} did not download")
+        with open(os.path.join(folder, name), "wb") as f:
+            f.write(data)
+    importlib.invalidate_caches()
+    return importlib.import_module("backend.wan.service")
+
+
 def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
     app = FastAPI(title="VoiceForge backend", version=VERSION)
     app.add_middleware(
@@ -1975,6 +2004,29 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
                 return {"ok": True, "version": presenter.PRESENTER_VERSION, "bytes": len(data)}
         except Exception as e:  # noqa: BLE001
             print("[voiceforge] presenter service unavailable:", e, flush=True)
+
+    # AI video clips (Wan 2.2), notebooks only and OFF unless the notebook
+    # sets VOICEFORGE_WAN=1: it downloads ~25 GB, which a voice-only session
+    # should not pay for. Modal runs it as its own app (modal/voiceforge_wan.py).
+    # Mounted under /wan; its engine installs in the background into a private
+    # virtualenv, and any failure leaves the voice server untouched.
+    if provider in ("colab", "kaggle") and os.environ.get("VOICEFORGE_WAN", "0") == "1":
+        try:
+            wan = _load_wan_service()
+            app.include_router(
+                wan.create_wan_router(
+                    _check,
+                    provider=provider,
+                    # On a single GPU a clip and a narration must not overlap.
+                    shared_lock=_GPU_LOCK,
+                    before_engine=lambda: torch.cuda.empty_cache() if torch.cuda.is_available() else None,
+                ),
+                prefix="/wan",
+            )
+            wan.install.start_install_in_background()
+            print("[voiceforge] video service mounted at /wan; engine installing in the background", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print("[voiceforge] video service unavailable:", e, flush=True)
 
     @app.get("/health")
     def health() -> dict:

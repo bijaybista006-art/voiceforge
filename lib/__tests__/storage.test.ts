@@ -52,6 +52,7 @@ describe("kindOfPath", () => {
     expect(kindOfPath("jobs/a.mp3")).toBe("job");
     expect(kindOfPath("presenter-clips/a.mp4")).toBe("presenter-clip");
     expect(kindOfPath("presenters/image/a.png")).toBe("presenter");
+    expect(kindOfPath("clips/a.mp4")).toBe("clip");
     expect(kindOfPath("assets/music/a.mp3")).toBe("asset");
     expect(kindOfPath("uploads/k/d/a.png")).toBe("upload");
     expect(kindOfPath("elsewhere/a.bin")).toBe("other");

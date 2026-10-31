@@ -144,6 +144,13 @@ export async function registerBackend(
             ? { presenterProbedUrl: existing.presenterProbedUrl }
             : {}),
           ...(existing.presenterNote ? { presenterNote: existing.presenterNote } : {}),
+          // AI video: same rule as the presenter fields above.
+          ...(existing.wanUrl ? { wanUrl: existing.wanUrl } : {}),
+          ...(existing.wanCapabilities ? { wanCapabilities: existing.wanCapabilities } : {}),
+          ...(existing.wanProbedAt ? { wanProbedAt: existing.wanProbedAt } : {}),
+          ...(existing.wanProbedUrl ? { wanProbedUrl: existing.wanProbedUrl } : {}),
+          ...(existing.wanNote ? { wanNote: existing.wanNote } : {}),
+          ...(existing.wanLimits ? { wanLimits: existing.wanLimits } : {}),
         }
       : {}),
     registeredAt: existing?.registeredAt ?? now,

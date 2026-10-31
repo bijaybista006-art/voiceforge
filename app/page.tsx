@@ -5,6 +5,7 @@ import { Shell, type ViewId } from "@/components/Shell";
 import { HomeView } from "@/components/views/HomeView";
 import { SpeechView } from "@/components/views/SpeechView";
 import { VideoView } from "@/components/views/VideoView";
+import { ClipView } from "@/components/views/ClipView";
 import { Toaster } from "@/components/ui/Toast";
 import { useApp } from "@/lib/store";
 
@@ -37,6 +38,8 @@ export default function Studio() {
           <HomeView onNavigate={setView} />
         ) : view === "speech" ? (
           <SpeechView />
+        ) : view === "clips" ? (
+          <ClipView />
         ) : (
           <VideoView />
         )}

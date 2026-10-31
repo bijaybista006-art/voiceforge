@@ -53,7 +53,7 @@ export interface Job {
   id: string;
   status: JobStatus;
   /** "tts" by default; video renders share this record but finish differently. */
-  kind?: "tts" | "video" | "presenter";
+  kind?: "tts" | "video" | "presenter" | "clip";
   mode: JobMode;
   format: "mp3" | "wav";
   voiceId: string;
@@ -104,6 +104,19 @@ export interface Job {
     guidance?: number;
     seed?: number;
     engine?: string;
+  };
+  /**
+   * AI video clips (Wan) only — see lib/server/clipjobs.ts. `request` is what
+   * was asked, kept so the clip can be sent again if a backend loses it;
+   * `settings` is what the backend actually used (resolved seed, size…), so a
+   * good clip can be made again.
+   */
+  clip?: {
+    request: Record<string, unknown>;
+    appUrl: string;
+    settings?: Record<string, unknown>;
+    restarts?: number;
+    failedOn?: string[];
   };
   /** 0-100 while rendering, so a long job isn't a black box. */
   progress?: number;
