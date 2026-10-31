@@ -4,7 +4,7 @@ import { formatDuration } from "@/lib/audio";
 import { useApp } from "@/lib/store";
 import { anyPresenterReady, usePresenterStatus } from "@/lib/presenterClient";
 import { useClipStatus } from "@/lib/clipClient";
-import type { ViewId } from "../Shell";
+import { useRouter } from "next/navigation";
 import { SpeechConnectionForm } from "../Connections";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
@@ -150,7 +150,10 @@ function ClipCard({ onOpen }: { onOpen(): void }) {
   );
 }
 
-export function HomeView({ onNavigate }: { onNavigate(v: ViewId): void }) {
+export function HomeView() {
+  const router = useRouter();
+  const onNavigate = (v: "speech" | "video" | "clips") =>
+    router.push(v === "speech" ? "/studio/speech" : v === "video" ? "/studio/presenter" : "/studio/ai-video");
   const speechReady = useApp((s) => s.backend.connected);
 
   return (

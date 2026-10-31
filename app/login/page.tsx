@@ -27,7 +27,7 @@ function LoginForm() {
         setError(data.error ?? "Sign in failed.");
         return;
       }
-      router.replace(params.get("next") || "/");
+      router.replace(params.get("next") || "/studio");
       router.refresh();
     } catch {
       setError("Couldn't reach the server. Check your connection.");
