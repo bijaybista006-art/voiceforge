@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmAction } from "@/lib/confirm";
 import { useEffect, useRef, useState } from "react";
 import { formatDuration } from "@/lib/audio";
 import type { StudioVoice } from "@/lib/gateway";
@@ -84,9 +85,14 @@ export function VoiceCard({ voice }: { voice: StudioVoice }) {
       <button
         type="button"
         onClick={() => {
-          if (window.confirm(`Delete "${voice.name}" from the library? This can't be undone.`)) {
-            void removeVoice(voice.id);
-          }
+          void confirmAction({
+            title: `Delete "${voice.name}"?`,
+            body: "It's removed from the voice library. This can't be undone.",
+            confirmLabel: "Delete voice",
+            danger: true,
+          }).then((ok) => {
+            if (ok) void removeVoice(voice.id);
+          });
         }}
         aria-label={`Delete ${voice.name}`}
         className="grid h-7 w-7 place-items-center rounded-md text-faint opacity-0 transition-all hover:bg-dangerSoft hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"

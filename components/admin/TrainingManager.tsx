@@ -1,5 +1,7 @@
 "use client";
 
+import { SkeletonCard } from "@/components/ui/Kit";
+import { confirmAction } from "@/lib/confirm";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { decodeAudioBlob, encodeWavPcm16, formatDuration, type PcmAudio } from "@/lib/audio";
 import {
@@ -131,7 +133,13 @@ export function TrainingManager() {
   );
 
   async function remove(s: TrainingSample) {
-    if (!window.confirm("Delete this clip? The recording is removed from storage.")) return;
+    const ok = await confirmAction({
+      title: "Delete this clip?",
+      body: "The recording and its transcript are removed from storage. This can't be undone.",
+      confirmLabel: "Delete clip",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(`del-${s.id}`);
     try {
       const res = await fetch(`/api/admin/training/${s.id}`, { method: "DELETE" });
@@ -163,7 +171,12 @@ export function TrainingManager() {
   }
 
   if (!data) {
-    return <div className="glass-card px-5 py-8 text-center text-sm text-muted">Loading…</div>;
+    return (
+      <div className="grid gap-3" aria-busy="true" aria-label="Loading">
+        <SkeletonCard lines={3} />
+        <SkeletonCard lines={2} />
+      </div>
+    );
   }
 
   return (

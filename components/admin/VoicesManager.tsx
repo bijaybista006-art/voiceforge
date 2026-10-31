@@ -1,5 +1,7 @@
 "use client";
 
+import { SkeletonCard } from "@/components/ui/Kit";
+import { confirmAction } from "@/lib/confirm";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { decodeAudioBlob, encodeWavPcm16, formatDuration } from "@/lib/audio";
 import { LANGUAGES, SAMPLE_IDEAL_MAX_SEC, SAMPLE_IDEAL_MIN_SEC } from "@/lib/config";
@@ -68,7 +70,12 @@ export function VoicesManager() {
   }
 
   if (!data) {
-    return <div className="glass-card px-5 py-8 text-center text-sm text-muted">Loading…</div>;
+    return (
+      <div className="grid gap-3" aria-busy="true" aria-label="Loading">
+        <SkeletonCard lines={3} />
+        <SkeletonCard lines={2} />
+      </div>
+    );
   }
 
   return (
@@ -165,8 +172,14 @@ export function VoicesManager() {
               )
             }
             onDelete={() => {
-              if (!window.confirm(`Delete "${v.name}"? The clip is removed from storage.`)) return;
-              void act(`/api/admin/voices/${v.id}`, { method: "DELETE" }, `delete-${v.id}`);
+              void confirmAction({
+                title: `Delete "${v.name}"?`,
+                body: "The reference clip is removed from storage. This can't be undone.",
+                confirmLabel: "Delete voice",
+                danger: true,
+              }).then((ok) => {
+                if (ok) void act(`/api/admin/voices/${v.id}`, { method: "DELETE" }, `delete-${v.id}`);
+              });
             }}
           />
         ))
