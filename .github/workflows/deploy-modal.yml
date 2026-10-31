@@ -43,6 +43,22 @@ jobs:
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: modal deploy modal/voiceforge_modal.py
 
+      # AI video (Wan 2.2) is its own Modal app, deployed AFTER voice so a
+      # failure here can never stop voice from shipping.
+      - name: Deploy AI video
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: modal deploy modal/voiceforge_wan.py
+
+      # Fills the wan-models volume the first time (~25 GB, CPU only, ~10 min);
+      # every later run sees the weights and returns in seconds.
+      - name: Download AI video weights (first run only)
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: modal run modal/voiceforge_wan.py::download
+
       - name: Next step
         run: |
           echo "Deployed. Copy the printed https://…modal.run URL into"
