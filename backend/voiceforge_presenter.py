@@ -48,7 +48,7 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
-PRESENTER_VERSION = "1.3.2"
+PRESENTER_VERSION = "1.4.0"
 
 # Pinned so a change upstream cannot alter results between two sessions. The
 # Modal image pins the same commit.
@@ -83,7 +83,13 @@ DOWNLOAD_TIMEOUT = 120
 # A presenter clip is an intro or an outro, not a narration. The cap keeps a
 # mistaken request from holding a GPU for an hour.
 MAX_AUDIO_SECONDS = float(os.environ.get("VOICEFORGE_PRESENTER_MAX_SECONDS", "90"))
-ENGINE_TIMEOUT = 60 * 40
+# Quality defaults (40 steps, DeepCache off) take roughly 3x the time the old
+# speed defaults did, so a long line needs far more than the old 40 minutes.
+ENGINE_TIMEOUT = 60 * 100
+# DeepCache skips part of the U-Net on alternate steps: about 2x faster, with
+# a visible loss around the mouth. Off by default since Oct 2026 (lip sync
+# was judged poor); VOICEFORGE_PRESENTER_DEEPCACHE=1 turns it back on.
+DEEPCACHE = os.environ.get("VOICEFORGE_PRESENTER_DEEPCACHE", "0") == "1"
 
 # The engine's own entry point, run with one change: how its model is loaded.
 #
@@ -190,8 +196,9 @@ _BEFORE_ENGINE: Optional[Callable[[], None]] = None
 # pure helpers (unit-tested — no torch, no GPU)
 # ---------------------------------------------------------------------------
 
-def clamp_steps(value: Any, default: int = 20) -> int:
-    """Denoising steps. The engine's documented range is 20-50."""
+def clamp_steps(value: Any, default: int = 40) -> int:
+    """Denoising steps. The engine's documented range is 20-50; more is
+    sharper and better synced, and slower. 40 since Oct 2026 (was 20)."""
     try:
         n = int(value)
     except (TypeError, ValueError):
@@ -199,9 +206,10 @@ def clamp_steps(value: Any, default: int = 20) -> int:
     return max(10, min(50, n))
 
 
-def clamp_guidance(value: Any, default: float = 1.5) -> float:
+def clamp_guidance(value: Any, default: float = 2.0) -> float:
     """Guidance scale. Documented range 1.0-3.0: higher follows the audio
-    more closely and starts to jitter."""
+    more closely and starts to jitter. 2.0 since Oct 2026 (was 1.5): mouth
+    shapes were too soft to read."""
     try:
         g = float(value)
     except (TypeError, ValueError):
@@ -245,6 +253,7 @@ def engine_command(
     temp_dir: str,
     python: Optional[str] = None,
     runner: Optional[str] = None,
+    deepcache: bool = False,
 ) -> List[str]:
     """The call the engine's own inference.sh makes — through `runner`, when
     given, which is that same entry point with a lighter model load."""
@@ -256,7 +265,7 @@ def engine_command(
         "--inference_ckpt_path", cfg["ckpt"],
         "--inference_steps", str(steps),
         "--guidance_scale", str(guidance),
-        "--enable_deepcache",
+        *(["--enable_deepcache"] if deepcache else []),
         "--seed", str(seed),
         "--temp_dir", temp_dir,
         "--video_path", video,
@@ -749,6 +758,7 @@ def _run_presenter(req: Dict[str, Any]) -> None:
                 int(req.get("seed") or 1247),
                 os.path.join(work, "tmp"),
                 runner=write_runner(work),
+                deepcache=DEEPCACHE,
             )
             t_engine = time.time()
             ram_before = _children_peak_mb()
