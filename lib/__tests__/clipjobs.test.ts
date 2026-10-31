@@ -75,6 +75,7 @@ import {
   clipRequestBody,
   completeClip,
   createAndDispatchClip,
+  discoverWan,
   pickClipBackends,
   reconcileClip,
   shouldProbeWan,
@@ -108,16 +109,72 @@ const modal = () => ({
 });
 
 describe("where clips go", () => {
-  it("derives Modal's video and CPU-health addresses from the voice address", () => {
-    expect(wanCandidateUrls("https://ws--voiceforge-api.modal.run/")).toEqual({
+  it("derives Modal's video and CPU-health addresses from the voice address, same form first", () => {
+    const c = wanCandidateUrls("https://ws--voiceforge-api.modal.run/");
+    expect(c[0]).toEqual({
       service: "https://ws--voiceforge-wan.modal.run",
       health: "https://ws--voiceforge-wan-health.modal.run",
     });
+    // An older voice app has no region in its URL; a newer Wan app does
+    // (the first real deploy: …-api.modal.run vs …-wan.us-east.modal.run).
+    expect(c).toContainEqual({
+      service: "https://ws--voiceforge-wan.us-east.modal.run",
+      health: "https://ws--voiceforge-wan-health.us-east.modal.run",
+    });
+    expect(new Set(c.map((x) => x.health)).size).toBe(c.length);
+  });
+
+  it("keeps a regional voice address's own region first", () => {
+    const c = wanCandidateUrls("https://ws--voiceforge-api.eu-west.modal.run");
+    expect(c[0].service).toBe("https://ws--voiceforge-wan.eu-west.modal.run");
   });
 
   it("uses /wan on a notebook's tunnel, and nothing for a hand-typed custom URL", () => {
-    expect(wanCandidateUrls("https://k.trycloudflare.com", true)?.service).toBe("https://k.trycloudflare.com/wan");
-    expect(wanCandidateUrls("https://my.gpu.box", false)).toBeNull();
+    expect(wanCandidateUrls("https://k.trycloudflare.com", true)).toEqual([
+      { service: "https://k.trycloudflare.com/wan", health: "https://k.trycloudflare.com/wan" },
+    ]);
+    expect(wanCandidateUrls("https://my.gpu.box", false)).toEqual([]);
+  });
+
+  it("finds the Wan app at its regional address when the plain one is not there", async () => {
+    backends = [{ provider: "modal", url: "https://ws--voiceforge-api.modal.run", selfRegistered: false, health: "online", enabled: true }];
+    const asked: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        asked.push(String(url));
+        return String(url) === "https://ws--voiceforge-wan-health.us-east.modal.run/health"
+          ? new Response(JSON.stringify({ capabilities: ["text-to-video"], limits: { default_quality: "720p" } }))
+          : new Response("modal-http: app not found", { status: 404 });
+      })
+    );
+    try {
+      expect(await discoverWan("modal" as any, 5_000)).toEqual(["text-to-video"]);
+      expect(asked[0]).toBe("https://ws--voiceforge-wan-health.modal.run/health");
+      expect(backends[0]).toMatchObject({
+        wanUrl: "https://ws--voiceforge-wan.us-east.modal.run",
+        wanProbedUrl: "https://ws--voiceforge-wan-health.us-east.modal.run",
+        wanCapabilities: ["text-to-video"],
+      });
+      // Remembered: the next probe is not due, and asks that address first.
+      expect(shouldProbeWan(backends[0])).toBe(false);
+      asked.length = 0;
+      await discoverWan("modal" as any, 5_000);
+      expect(asked[0]).toBe("https://ws--voiceforge-wan-health.us-east.modal.run/health");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("records a no when every address answers that nothing is there", async () => {
+    backends = [{ provider: "modal", url: "https://ws--voiceforge-api.modal.run", selfRegistered: false, health: "online", enabled: true }];
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("not found", { status: 404 })));
+    try {
+      expect(await discoverWan("modal" as any, 5_000)).toEqual([]);
+      expect(backends[0].wanCapabilities).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("asks a new address, keeps a yes, and asks again after a no", () => {
