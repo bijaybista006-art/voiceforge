@@ -24,7 +24,8 @@ export default async function BackendsPage() {
   return (
     <AdminPage
       title="Backends"
-      description="Where generation actually runs. Notebooks register themselves — no URLs to copy."
+      description="The GPUs that do the work. See what's serving right now, switch features on or off per GPU, and connect new ones."
+      wide
     >
       <BackendsManager appUrl={await appUrl()} />
     </AdminPage>

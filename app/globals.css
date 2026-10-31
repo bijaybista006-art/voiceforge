@@ -117,10 +117,13 @@
   }
 }
 
-html,
+/* The viewport itself scrolls (never <body>): a sideways overflow is clipped
+   at the document, without turning body into its own scroll box. */
+html {
+  overflow-x: clip;
+}
 body {
-  height: 100%;
-  overflow-x: hidden;
+  min-height: 100%;
   max-width: 100vw;
 }
 

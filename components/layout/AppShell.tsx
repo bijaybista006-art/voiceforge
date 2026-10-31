@@ -137,7 +137,7 @@ export function AppShell({
   const navLabel = section === "admin" ? "Admin" : "Studio";
 
   return (
-    <div className="min-h-screen bg-bg" data-section={section}>
+    <div className="relative min-h-screen bg-bg" data-section={section}>
       <a
         href="#main"
         className="visually-hidden focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[70] focus:h-auto focus:w-auto focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:shadow-lift"
@@ -146,18 +146,22 @@ export function AppShell({
       </a>
 
       {/* ---------- sidebar (desktop) ---------- */}
+      {/* The column spans the whole page (so its edge never stops short);
+          its contents stay pinned to the viewport while the page scrolls. */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 hidden w-[248px] flex-col border-r border-line bg-surface lg:flex ${
+        className={`absolute inset-y-0 left-0 z-40 hidden w-[248px] border-r border-line bg-surface lg:block ${
           section === "admin" ? "sidebar-admin" : ""
         }`}
       >
-        <div className="flex h-16 shrink-0 items-center border-b border-line px-5">
-          <Brand section={section} />
+        <div className="sticky top-0 flex h-screen flex-col">
+          <div className="flex h-16 shrink-0 items-center border-b border-line px-5">
+            <Brand section={section} />
+          </div>
+          <nav aria-label={navLabel} className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
+            <NavList sections={sections} pathname={pathname} />
+          </nav>
+          {sidebarFooter ? <div className="shrink-0 border-t border-line p-3">{sidebarFooter}</div> : null}
         </div>
-        <nav aria-label={navLabel} className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
-          <NavList sections={sections} pathname={pathname} />
-        </nav>
-        {sidebarFooter ? <div className="shrink-0 border-t border-line p-3">{sidebarFooter}</div> : null}
       </aside>
 
       {/* ---------- phone menu ---------- */}

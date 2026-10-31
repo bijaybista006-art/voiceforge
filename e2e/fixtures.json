@@ -1,0 +1,283 @@
+{
+  "backends": {
+    "backends": [
+      {
+        "provider": "colab",
+        "url": "https://quiet-river-1234.trycloudflare.com",
+        "gpu": "Tesla T4",
+        "models": [
+          "chatterbox"
+        ],
+        "version": "2.4.0",
+        "capabilities": [
+          "tts",
+          "render",
+          "presenter-relip"
+        ],
+        "registeredAt": 1761900000000,
+        "lastHeartbeat": 1761900000000,
+        "enabled": true,
+        "priority": 0,
+        "selfRegistered": true,
+        "busy": false,
+        "voicesCached": [],
+        "gpuSecondsMonth": 5460,
+        "jobsToday": 4,
+        "health": "online",
+        "secondsSinceHeartbeat": 42,
+        "secondsSinceReached": 42,
+        "wanUrl": "https://quiet-river-1234.trycloudflare.com/wan",
+        "wanCapabilities": [
+          "text-to-video"
+        ],
+        "clipsEnabled": true,
+        "voiceEnabled": true
+      },
+      {
+        "provider": "modal",
+        "url": "https://bijaybista006--voiceforge-api.modal.run",
+        "gpu": "Tesla T4",
+        "models": [
+          "chatterbox"
+        ],
+        "capabilities": [
+          "tts"
+        ],
+        "registeredAt": 1761800000000,
+        "lastHeartbeat": 1761800000000,
+        "enabled": true,
+        "priority": 3,
+        "selfRegistered": false,
+        "busy": false,
+        "voicesCached": [],
+        "gpuSecondsMonth": 720,
+        "jobsToday": 0,
+        "health": "unverified",
+        "secondsSinceHeartbeat": 99999,
+        "secondsSinceReached": 18000,
+        "presenterUrl": "https://bijaybista006--voiceforge-presenter.modal.run",
+        "presenterCapabilities": [
+          "presenter-relip"
+        ],
+        "wanUrl": "https://bijaybista006--voiceforge-wan.us-east.modal.run",
+        "wanCapabilities": [
+          "text-to-video"
+        ],
+        "clipsEnabled": false
+      }
+    ],
+    "active": "auto",
+    "notebooks": {
+      "colab": {
+        "mine": "https://colab.research.google.com/drive/1AbC?authuser=voiceforge.gpu%40gmail.com",
+        "fresh": "https://colab.research.google.com/github/bijaybista006-art/voiceforge/blob/main/colab/voiceforge_server.ipynb"
+      },
+      "kaggle": {
+        "mine": null,
+        "fresh": "https://www.kaggle.com/kernels/welcome?src=https://github.com/bijaybista006-art/voiceforge/blob/main/colab/voiceforge_server.ipynb"
+      },
+      "googleAccount": "voiceforge.gpu@gmail.com"
+    },
+    "storageConnected": true,
+    "registrationTokenSet": true,
+    "backendSecretSet": true
+  },
+  "gatewayStatus": {
+    "active": "auto",
+    "backend": {
+      "provider": "colab",
+      "url": "https://quiet-river-1234.trycloudflare.com",
+      "gpu": "Tesla T4",
+      "models": [
+        "chatterbox"
+      ],
+      "health": "online",
+      "secondsSinceHeartbeat": 42
+    },
+    "voices": [
+      {
+        "id": "bijay-english-faafab11",
+        "name": "Bijay (English)",
+        "language": "en",
+        "durationSec": 14.2,
+        "isDefault": true,
+        "audioUrl": "https://example.invalid/voices/bijay.wav"
+      },
+      {
+        "id": "bijay-nepali-1a2b3c4d",
+        "name": "Bijay (Nepali)",
+        "language": "ne",
+        "durationSec": 12.8,
+        "isDefault": false,
+        "audioUrl": "https://example.invalid/voices/bijay-ne.wav"
+      }
+    ],
+    "pronunciations": {},
+    "storageReady": true,
+    "hint": null
+  },
+  "jobs": {
+    "jobs": [
+      {
+        "id": "a1b2c3d4-clip",
+        "status": "done",
+        "mode": "stitch",
+        "format": "mp3",
+        "voiceId": "",
+        "source": "studio",
+        "chars": 96,
+        "chunks": 1,
+        "backend": "colab",
+        "createdAt": 1761905000000,
+        "duration": 5.04,
+        "genSeconds": 540,
+        "kind": "clip",
+        "videoUrl": "https://example.invalid/clips/a1.mp4"
+      },
+      {
+        "id": "e5f6a7b8-tts",
+        "status": "done",
+        "mode": "stitch",
+        "format": "mp3",
+        "voiceId": "bijay-english-faafab11",
+        "source": "key_n8n",
+        "chars": 1840,
+        "chunks": 9,
+        "backend": "colab",
+        "createdAt": 1761904000000,
+        "duration": 132.4,
+        "genSeconds": 210,
+        "kind": "tts",
+        "audioUrl": "https://example.invalid/jobs/e5.mp3"
+      },
+      {
+        "id": "c9d0e1f2-pres",
+        "status": "running",
+        "mode": "stitch",
+        "format": "mp3",
+        "voiceId": "bijay-english-faafab11",
+        "source": "studio",
+        "chars": 120,
+        "chunks": 1,
+        "backend": "modal",
+        "createdAt": 1761906000000,
+        "kind": "presenter",
+        "progress": 40,
+        "stage": "lip-syncing"
+      },
+      {
+        "id": "f3a4b5c6-err",
+        "status": "error",
+        "mode": "stitch",
+        "format": "mp3",
+        "voiceId": "bijay-english-faafab11",
+        "source": "key_n8n",
+        "chars": 400,
+        "chunks": 2,
+        "backend": "colab",
+        "createdAt": 1761903000000,
+        "kind": "tts",
+        "error": "the backend restarted before this job finished"
+      }
+    ],
+    "storageConnected": true
+  },
+  "presenters": {
+    "presenters": [
+      {
+        "id": "avatar-1-42f29930",
+        "name": "Bijay on camera",
+        "kind": "recording",
+        "url": "https://example.invalid/presenters/recording/a.mp4",
+        "mime": "video/mp4",
+        "sizeBytes": 5200000,
+        "durationSec": 15.2,
+        "source": "self",
+        "createdAt": 1761800000000,
+        "updatedAt": 1761800000000,
+        "isDefault": true
+      }
+    ],
+    "storageReady": true,
+    "hint": null,
+    "limits": {
+      "recordingBytes": 52428800,
+      "imageBytes": 10485760,
+      "minSeconds": 5,
+      "maxSeconds": 60
+    },
+    "readiness": {
+      "recording": {
+        "ready": true,
+        "provider": "colab"
+      },
+      "image": {
+        "ready": false,
+        "reason": "No connected backend can animate a still image yet."
+      }
+    }
+  },
+  "clipsReadiness": {
+    "ready": true,
+    "provider": "colab",
+    "limits": {
+      "default_quality": "480p",
+      "max_frames": 121,
+      "fps": 24
+    }
+  },
+  "voices": {
+    "voices": [
+      {
+        "id": "bijay-english-faafab11",
+        "name": "Bijay (English)",
+        "language": "en",
+        "transcript": "Hello there, this is my voice.",
+        "audioUrl": "https://example.invalid/voices/bijay.wav",
+        "durationSec": 14.2,
+        "sizeBytes": 454000,
+        "createdAt": 1761800000000,
+        "updatedAt": 1761800000000,
+        "isDefault": true
+      },
+      {
+        "id": "bijay-nepali-1a2b3c4d",
+        "name": "Bijay (Nepali)",
+        "language": "ne",
+        "transcript": "नमस्ते, यो मेरो आवाज हो।",
+        "audioUrl": "https://example.invalid/voices/bijay-ne.wav",
+        "durationSec": 12.8,
+        "sizeBytes": 409600,
+        "createdAt": 1761800000000,
+        "updatedAt": 1761800000000,
+        "isDefault": false
+      }
+    ],
+    "storageReady": true,
+    "hint": null
+  },
+  "keys": {
+    "keys": [
+      {
+        "id": "key_n8n",
+        "name": "n8n production",
+        "prefix": "vf_live_ab12",
+        "createdAt": 1761700000000,
+        "lastUsedAt": 1761904000000,
+        "rateLimitPerMinute": 30,
+        "monthlyCharQuota": 500000,
+        "charsThisMonth": 18400,
+        "revoked": false
+      }
+    ],
+    "storageConnected": true,
+    "defaultRateLimit": 30
+  },
+  "training": {
+    "samples": [],
+    "summary": [],
+    "speakers": [],
+    "storageReady": true,
+    "hint": null
+  }
+}
