@@ -278,7 +278,7 @@ export function VoiceLab() {
               placeholder="Type exactly what you said, word for word."
             />
             <p className="mt-1.5 text-[11.5px] leading-snug text-faint">
-              This matters more than you'd expect — the clone gets noticeably worse without it.
+              This matters more than you&apos;d expect — the clone gets noticeably worse without it.
             </p>
           </div>
           <div className="flex gap-2">

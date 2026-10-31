@@ -88,7 +88,6 @@ function AbCompareDialog({ open, onClose }: { open: boolean; onClose(): void }) 
                 {formatDuration(r.durationSec)} · {r.genSeconds.toFixed(1)}s to render
               </span>
             </div>
-            {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
             <audio controls src={r.url} className="mb-3 h-9 w-full" />
             <Button
               size="sm"
