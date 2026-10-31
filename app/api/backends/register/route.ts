@@ -11,7 +11,12 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
-import { HEARTBEAT_SECONDS, isValidRegistrationToken, registerBackend } from "@/lib/server/backends";
+import {
+  HEARTBEAT_SECONDS,
+  backendFeatures,
+  isValidRegistrationToken,
+  registerBackend,
+} from "@/lib/server/backends";
 import { isRedisConfigured } from "@/lib/server/redis";
 
 export const runtime = "nodejs";
@@ -65,5 +70,9 @@ export async function POST(req: NextRequest) {
     ok: true,
     provider: row.provider,
     heartbeat_seconds: HEARTBEAT_SECONDS,
+    // The Admin → Backends switches for this backend. Sent on every
+    // heartbeat, so a notebook learns of a change within one beat; it uses
+    // `clips` to decide whether to install AI video at all.
+    features: backendFeatures(row),
   });
 }

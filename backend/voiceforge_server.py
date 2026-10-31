@@ -1895,6 +1895,32 @@ def _load_presenter_module():
 
 WAN_FILES = ("__init__.py", "settings.py", "engine.py", "install.py", "service.py")
 
+# The mounted AI video service, when this notebook runs one (see create_app).
+_WAN_SERVICE = None
+
+
+def apply_app_features(features: Optional[dict]) -> str:
+    """Act on what the app says this backend may do.
+
+    The notebook calls this with the `features` from its registration answer,
+    and again on every heartbeat, so a switch flipped in Admin → Backends
+    reaches it within one beat. Today only AI video needs acting on: its
+    ~25 GB install starts the first time `clips` is on (and never twice).
+    Voice and presenter switches only change routing, which the app does.
+
+    An answer without `features` (an older app) counts as everything on.
+    Returns a one-line status for the notebook to print.
+    """
+    if _WAN_SERVICE is None:
+        return "AI video: not enabled in this notebook (ENABLE_AI_VIDEO = False)"
+    clips = (features or {}).get("clips", True)
+    if not clips:
+        return "AI video: switched off for this backend in Admin -> Backends (no download)"
+    install = _WAN_SERVICE.install
+    install.start_install_in_background()
+    state = install.INSTALL.get("state")
+    return f"AI video: on -> {'ready' if state == 'ready' else 'installing in the background (~15-20 min)'}"
+
 
 def _load_wan_service():
     """Import backend/wan/service.py, fetching the package first if absent.
@@ -2023,8 +2049,18 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
                 ),
                 prefix="/wan",
             )
-            wan.install.start_install_in_background()
-            print("[voiceforge] video service mounted at /wan; engine installing in the background", flush=True)
+            global _WAN_SERVICE
+            _WAN_SERVICE = wan
+            if os.environ.get("VOICEFORGE_WAN_GATED") == "1":
+                # The notebook asks the app first: the install starts when
+                # its registration answer says AI video is on for this
+                # backend (apply_app_features), so switching it off in
+                # Admin → Backends also skips the ~25 GB download.
+                print("[voiceforge] video service mounted at /wan; install waits for the app's go-ahead", flush=True)
+            else:
+                # A notebook from before the Admin switch existed.
+                wan.install.start_install_in_background()
+                print("[voiceforge] video service mounted at /wan; engine installing in the background", flush=True)
         except Exception as e:  # noqa: BLE001
             print("[voiceforge] video service unavailable:", e, flush=True)
 

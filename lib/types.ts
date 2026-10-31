@@ -185,11 +185,19 @@ export interface RegisteredBackend extends BackendRegistration {
   /** Why the last attempt to reach it failed, if it did. */
   lastReachError?: string;
   /**
-   * Whether this backend may be used for presenter video. Absent means yes.
-   * Separate from `enabled`, which governs the backend as a whole: this lets
-   * a notebook keep doing voice while video goes elsewhere, or nowhere.
+   * Per-feature switches (Admin → Backends: Voice / Presenter / AI video).
+   * Absent means on. All are separate from `enabled`, which governs the
+   * backend as a whole, so a notebook can keep doing voice while video goes
+   * elsewhere, or nowhere — and Modal can be kept out of any one feature.
+   *
+   * `videoEnabled` is the Presenter switch; the name predates AI video and is
+   * kept so stored rows keep their meaning.
    */
   videoEnabled?: boolean;
+  /** Voice (TTS) switch. */
+  voiceEnabled?: boolean;
+  /** AI video clips (Wan) switch. Also tells a notebook whether to install it. */
+  clipsEnabled?: boolean;
 }
 
 /** Registry row plus the status computed at read time. */

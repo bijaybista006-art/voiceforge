@@ -37,8 +37,12 @@ export const backendPatchSchema = z.union([
     .object({
       provider: providerSchema,
       enabled: z.boolean().optional(),
-      /** Presenter video only; voice and slideshow rendering ignore it. */
+      /** The Presenter switch (name kept from before AI video existed). */
       videoEnabled: z.boolean().optional(),
+      /** The Voice switch. */
+      voiceEnabled: z.boolean().optional(),
+      /** The AI video switch. */
+      clipsEnabled: z.boolean().optional(),
       priority: z.number().int().min(0).max(99).optional(),
     })
     .strict(),
