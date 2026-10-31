@@ -15,6 +15,7 @@ import {
   recordUnreachable,
 } from "@/lib/server/backends";
 import { discoverPresenter } from "@/lib/server/presenterjobs";
+import { discoverWan } from "@/lib/server/clipjobs";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -45,6 +46,8 @@ export async function POST(req: NextRequest) {
   // can do and stores the answer; it never throws and never affects the
   // result of the test itself.
   const presenter = discoverPresenter(body.provider, 50_000);
+  // AI video too, the same way: its own address, best-effort, stored.
+  const wan = discoverWan(body.provider, 50_000);
   let health: unknown;
   try {
     const res = await fetch(`${backend.url}/health`, {
@@ -85,6 +88,7 @@ export async function POST(req: NextRequest) {
       latencyMs: Date.now() - started,
       health,
       presenter: await presenter,
+      wan: await wan,
     });
   }
 

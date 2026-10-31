@@ -140,6 +140,20 @@ export interface BackendRegistration {
   presenterProbedUrl?: string;
   /** What the presenter address said about its engine install, if anything. */
   presenterNote?: string;
+  /**
+   * AI video clips (Wan). Same shape as the presenter fields, kept apart for
+   * the same reason: the voice server's /health knows nothing about them.
+   * wanUrl is where clips go (Modal: its own app; a notebook: <tunnel>/wan).
+   */
+  wanUrl?: string;
+  /** What the Wan address reported, e.g. ["text-to-video"] once ready. */
+  wanCapabilities?: string[];
+  wanProbedAt?: number;
+  wanProbedUrl?: string;
+  /** What the Wan address said about its install, if anything. */
+  wanNote?: string;
+  /** Sizes, frame counts and defaults the Wan backend advertised. */
+  wanLimits?: Record<string, unknown>;
 }
 
 /** A row in the registry, as stored. */

@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { apiError, authenticate } from "@/lib/server/apiauth";
 import { getJob, reconcileJob } from "@/lib/server/jobs";
 import { reconcilePresenter } from "@/lib/server/presenterjobs";
+import { reconcileClip } from "@/lib/server/clipjobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     job =
       job.kind === "presenter"
         ? await reconcilePresenter(job)
+        : job.kind === "clip"
+          ? await reconcileClip(job)
         : job.kind === "video"
           ? job
           : await reconcileJob(job);
@@ -52,6 +55,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
     ...(job.genSeconds !== undefined ? { gen_seconds: job.genSeconds } : {}),
     ...(job.audioUrl ? { audio_url: job.audioUrl } : {}),
     ...(job.videoUrl ? { video_url: job.videoUrl, bytes: job.videoBytes } : {}),
+    ...(job.kind === "clip" ? { kind: "clip" } : {}),
+    ...(job.clip?.settings ? { settings: job.clip.settings } : {}),
     ...(job.timeline ? { timeline: job.timeline } : {}),
     ...(job.engineUsed ? { engine_used: job.engineUsed } : {}),
     ...(job.diagnostics ? { diagnostics: job.diagnostics } : {}),

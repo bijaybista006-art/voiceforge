@@ -14,6 +14,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { collectJob, getJob, isValidCallbackToken, saveJob } from "@/lib/server/jobs";
 import { completePresenter } from "@/lib/server/presenterjobs";
+import { completeClip } from "@/lib/server/clipjobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,7 +22,9 @@ export const maxDuration = 60;
 
 const schema = z.object({
   job_id: z.string().optional(),
-  kind: z.enum(["tts", "video", "presenter"]).optional(),
+  kind: z.enum(["tts", "video", "presenter", "clip"]).optional(),
+  /** AI video clips: everything the backend used (seed, size, steps…). */
+  settings: z.record(z.unknown()).optional(),
   status: z.string(),
   mode: z.enum(["stitch", "items"]).optional(),
   format: z.enum(["mp3", "wav"]).optional(),
@@ -89,6 +92,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const collected =
     job.kind === "presenter"
       ? await completePresenter(job, body)
+      : job.kind === "clip"
+        ? await completeClip(job, body)
       : job.kind === "video" || body.kind === "video"
         ? job
         : await collectJob(job, body);
@@ -107,6 +112,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
           duration: collected.duration,
           audio_url: collected.audioUrl,
           video_url: collected.videoUrl,
+          ...(collected.clip?.settings ? { settings: collected.clip.settings } : {}),
           items: collected.items?.map((i) => ({
             index: i.index,
             duration: i.duration,

@@ -59,6 +59,7 @@ export type FileKind =
   | "job"
   | "presenter-clip"
   | "presenter"
+  | "clip"
   | "asset"
   | "upload"
   | "training"
@@ -70,6 +71,7 @@ export function kindOfPath(path: string): FileKind {
   if (path.startsWith("jobs/")) return "job";
   if (path.startsWith("presenter-clips/")) return "presenter-clip";
   if (path.startsWith("presenters/")) return "presenter";
+  if (path.startsWith("clips/")) return "clip";
   if (path.startsWith("assets/")) return "asset";
   if (path.startsWith("uploads/")) return "upload";
   if (path.startsWith("training/")) return "training";
