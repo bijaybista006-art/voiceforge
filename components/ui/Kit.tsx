@@ -12,7 +12,19 @@ import { IconCheck, IconChevronDown, IconCopy, IconInfo } from "./Icons";
 
 // --- status ------------------------------------------------------------------
 
-export type StatusKind = "online" | "busy" | "offline" | "disabled" | "unverified" | "testing" | "ready";
+export type StatusKind =
+  | "online"
+  | "busy"
+  | "offline"
+  | "disabled"
+  | "unverified"
+  | "testing"
+  | "ready"
+  // job states
+  | "done"
+  | "running"
+  | "queued"
+  | "error";
 
 const STATUS: Record<StatusKind, { label: string; dot: string; wrap: string; pulse?: boolean }> = {
   online: { label: "Online", dot: "bg-ready", wrap: "border-ready/30 bg-readySoft text-ready" },
@@ -22,6 +34,10 @@ const STATUS: Record<StatusKind, { label: string; dot: string; wrap: string; pul
   unverified: { label: "Not verified", dot: "bg-live", wrap: "border-live/30 bg-liveSoft text-live" },
   offline: { label: "Offline", dot: "bg-faint", wrap: "border-line bg-surface2 text-muted" },
   disabled: { label: "Disabled", dot: "bg-faint", wrap: "border-line bg-surface2 text-faint" },
+  done: { label: "Done", dot: "bg-ready", wrap: "border-ready/30 bg-readySoft text-ready" },
+  running: { label: "Running", dot: "bg-live", wrap: "border-live/30 bg-liveSoft text-live", pulse: true },
+  queued: { label: "Queued", dot: "bg-faint", wrap: "border-line bg-surface2 text-muted" },
+  error: { label: "Failed", dot: "bg-danger", wrap: "border-danger/30 bg-dangerSoft text-danger" },
 };
 
 /** A status pill: the word carries the meaning, the dot only reinforces it. */
