@@ -4,15 +4,19 @@ import type { ReactNode } from "react";
 import { useApp } from "@/lib/store";
 import { ConnectionsControl } from "./Connections";
 import { Badge } from "./ui/Badge";
-import { IconHome, IconVideo, IconWave } from "./ui/Icons";
+import { IconFilmSpark, IconHome, IconVideo, IconWave } from "./ui/Icons";
 
-export type ViewId = "home" | "speech" | "video";
+export type ViewId = "home" | "speech" | "video" | "clips";
 
 const NAV: Array<{ id: ViewId; label: string; short: string; Icon: typeof IconHome }> = [
   { id: "home", label: "Home", short: "Home", Icon: IconHome },
   { id: "speech", label: "Text to Speech", short: "Speech", Icon: IconWave },
   { id: "video", label: "Presenter Video", short: "Video", Icon: IconVideo },
+  { id: "clips", label: "AI Video", short: "AI Video", Icon: IconFilmSpark },
 ];
+
+/** Both video tools share the video accent (violet); speech is blue. */
+const isVideoView = (id: ViewId) => id === "video" || id === "clips";
 
 function NavItem({
   id,
@@ -29,7 +33,7 @@ function NavItem({
   onSelect(id: ViewId): void;
   badge?: ReactNode;
 }) {
-  const accent = id === "video" ? "text-video" : id === "speech" ? "text-audio" : "text-ink";
+  const accent = isVideoView(id) ? "text-video" : id === "speech" ? "text-audio" : "text-ink";
   return (
     <button
       type="button"
@@ -43,7 +47,7 @@ function NavItem({
       <span
         aria-hidden
         className={`absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full transition-all ${
-          active ? (id === "video" ? "bg-video" : "bg-audio") : "bg-transparent"
+          active ? (isVideoView(id) ? "bg-video" : "bg-audio") : "bg-transparent"
         }`}
       />
       <Icon className={`h-[18px] w-[18px] ${active ? accent : "text-faint group-hover:text-muted"}`} />

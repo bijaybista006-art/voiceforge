@@ -99,6 +99,12 @@ export function ApiDocs({ appUrl }: { appUrl: string }) {
         <Endpoint method="GET" path="/api/v1/jobs/{id}" blurb="Poll a job; returns audio_url when done." />
         <Endpoint
           method="POST"
+          path="/api/v1/clips"
+          blurb="Text prompt → AI video clip (Wan 2.2). Returns a job id; video_url when done."
+        />
+        <Endpoint method="GET" path="/api/v1/clips" blurb="Can a clip be made right now, and on which backend." />
+        <Endpoint
+          method="POST"
           path="/api/v1/audio/speech"
           blurb="OpenAI-compatible, synchronous, 600 characters max."
         />
@@ -235,6 +241,47 @@ export function ApiDocs({ appUrl }: { appUrl: string }) {
   ]
 }`}
         />
+      </Section>
+
+      <Section
+        title="AI video clips"
+        description="A 24 fps clip from a text prompt — b-roll, intros, Shorts. Takes minutes, so it is always a job."
+      >
+        <Snippet
+          label="1. Start the clip"
+          code={`curl -X POST ${base}/api/v1/clips \\
+  -H "Authorization: Bearer $VOICEFORGE_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"prompt":"Aerial drone shot over misty mountains at sunrise, cinematic","aspect":"landscape","seed":42}'`}
+        />
+        <Snippet
+          label="Response when finished (poll /api/v1/jobs/{id})"
+          code={`{
+  "status": "done",
+  "kind": "clip",
+  "duration": 5.04,
+  "video_url": "https://….supabase.co/storage/v1/object/public/voiceforge-audio/clips/8f1c….mp4",
+  "settings": { "width": 1280, "height": 704, "num_frames": 121, "fps": 24,
+                "steps": 50, "guidance": 5, "seed": 42, "quality": "720p" }
+}`}
+        />
+        <p className="mt-3">
+          Options: <code className="font-mono text-[12px]">aspect</code> (
+          <code className="font-mono text-[12px]">landscape</code> or{" "}
+          <code className="font-mono text-[12px]">vertical</code> for Shorts),{" "}
+          <code className="font-mono text-[12px]">quality</code> (
+          <code className="font-mono text-[12px]">720p</code> /{" "}
+          <code className="font-mono text-[12px]">480p</code>; default depends on the GPU),{" "}
+          <code className="font-mono text-[12px]">num_frames</code> (49, 81 or 121 — 2, 3.4 or 5
+          seconds), <code className="font-mono text-[12px]">steps</code>,{" "}
+          <code className="font-mono text-[12px]">guidance</code>,{" "}
+          <code className="font-mono text-[12px]">seed</code>,{" "}
+          <code className="font-mono text-[12px]">negative_prompt</code> and{" "}
+          <code className="font-mono text-[12px]">callback_url</code>. The finished job&apos;s{" "}
+          <code className="font-mono text-[12px]">settings</code> include the seed actually used, so
+          a clip you like can be made again. Use the same poll loop as narration, with a longer
+          Wait (60 s): a clip takes several minutes.
+        </p>
       </Section>
 
       <Section

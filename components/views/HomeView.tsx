@@ -3,6 +3,7 @@
 import { formatDuration } from "@/lib/audio";
 import { useApp } from "@/lib/store";
 import { anyPresenterReady, usePresenterStatus } from "@/lib/presenterClient";
+import { useClipStatus } from "@/lib/clipClient";
 import type { ViewId } from "../Shell";
 import { SpeechConnectionForm } from "../Connections";
 import { Badge } from "../ui/Badge";
@@ -11,6 +12,7 @@ import { Card, CardHeader } from "../ui/Card";
 import {
   IconArrowRight,
   IconDownload,
+  IconFilmSpark,
   IconMic,
   IconScript,
   IconSparkle,
@@ -115,6 +117,39 @@ function ProductCard({
   );
 }
 
+/** AI video (Wan): ready when a backend reports text-to-video. */
+function ClipCard({ onOpen }: { onOpen(): void }) {
+  const { status } = useClipStatus();
+  const ready = Boolean(status?.ready);
+  const stat = !status
+    ? "Checking…"
+    : ready
+      ? `on ${status.provider}${status.limits?.default_quality ? ` · ${status.limits.default_quality}` : ""}`
+      : "No video backend yet";
+  return (
+    <Card accent="video" interactive className="group flex flex-col hover:shadow-glowVideo">
+      <CardHeader
+        accent="video"
+        icon={<IconFilmSpark className="h-[18px] w-[18px]" />}
+        title="AI Video"
+        description="Describe a scene, get a 5-second clip for b-roll, intros or Shorts. Wan 2.2, commercial-use licence."
+        action={
+          <Badge tone={ready ? "video" : "neutral"} dot>
+            {ready ? "Ready" : "Not available"}
+          </Badge>
+        }
+      />
+      <div className="mt-auto flex items-center justify-between gap-3 pt-1">
+        <span className="font-mono text-[11.5px] tabular-nums text-faint">{stat}</span>
+        <Button variant="video" onClick={onOpen}>
+          Open
+          <IconArrowRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 export function HomeView({ onNavigate }: { onNavigate(v: ViewId): void }) {
   const speechReady = useApp((s) => s.backend.connected);
 
@@ -132,7 +167,7 @@ export function HomeView({ onNavigate }: { onNavigate(v: ViewId): void }) {
             <span className="text-audio">rendered on your own GPU.</span>
           </h1>
           <p className="mt-4 text-[15px] leading-relaxed text-muted">
-            A studio for long-form narration and presenter video. No subscription — the models run
+            A studio for long-form narration, presenter video and AI clips. No subscription — the models run
             on GPUs you control, and your voices and presenters are stored once for every backend
             to use.
           </p>
@@ -147,9 +182,10 @@ export function HomeView({ onNavigate }: { onNavigate(v: ViewId): void }) {
         </section>
 
         {/* products */}
-        <section className="mb-9 grid gap-4 md:grid-cols-2" aria-label="Tools">
+        <section className="mb-9 grid gap-4 md:grid-cols-2 xl:grid-cols-3" aria-label="Tools">
           <ProductCard kind="speech" onOpen={() => onNavigate("speech")} />
           <ProductCard kind="video" onOpen={() => onNavigate("video")} />
+          <ClipCard onOpen={() => onNavigate("clips")} />
         </section>
 
         {/* setup — only nags while there's genuinely nothing connected */}

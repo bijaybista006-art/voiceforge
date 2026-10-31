@@ -40,6 +40,15 @@ export const IconVideo = ({ className }: P) => (
   </svg>
 );
 
+/** AI video: a film frame with a spark — generated, not recorded. */
+export const IconFilmSpark = ({ className }: P) => (
+  <svg {...base(className)}>
+    <rect x="3" y="5" width="18" height="14" rx="2.5" />
+    <path d="M7 5v14M3 9h4M3 15h4" />
+    <path d="M14.5 9.2v5.6M11.7 12h5.6" />
+  </svg>
+);
+
 export const IconMic = ({ className }: P) => (
   <svg {...base(className)}>
     <rect x="9" y="3" width="6" height="10" rx="3" />
