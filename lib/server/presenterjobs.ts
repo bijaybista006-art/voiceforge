@@ -33,8 +33,13 @@ const INDEX_LIMIT = 200;
 /** How long a narration is left to its own callback before it is asked about. */
 const NARRATION_RECONCILE_AFTER_MS = 8_000;
 
-/** A clip is seconds of video; if it has not reported in this long it is lost. */
-export const PRESENTER_STALE_AFTER_MS = 45 * 60 * 1000;
+/**
+ * A clip is seconds of video; if it has not reported in this long it is lost.
+ * Raised from 45 to 120 min with the quality defaults (40 steps, no DeepCache,
+ * ~3x slower): a long line on a T4 can now legitimately run past 45 minutes.
+ * Matches the backend's ENGINE_TIMEOUT (100 min) plus narration and queueing.
+ */
+export const PRESENTER_STALE_AFTER_MS = 120 * 60 * 1000;
 /** Past this the clip stays on the backend and the job records that URL. */
 const MAX_COLLECT_BYTES = 80 * 1024 * 1024;
 
@@ -683,7 +688,7 @@ export async function reconcilePresenter(job: Job): Promise<Job> {
     return saveJob({
       ...job,
       status: "error",
-      error: "the presenter clip never reported back within 45 minutes",
+      error: "the presenter clip never reported back within 120 minutes",
     });
   }
 

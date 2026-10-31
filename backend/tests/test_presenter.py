@@ -23,27 +23,36 @@ class TestParameters:
         assert vp.clamp_steps(500) == 50
         assert vp.clamp_steps(1) == 10
 
-    def test_steps_fall_back_when_missing_or_nonsense(self):
-        assert vp.clamp_steps(None) == 20
-        assert vp.clamp_steps("fast") == 20
+    def test_steps_fall_back_to_the_quality_default(self):
+        # 40, not the engine's minimum of 20: lip sync at 20 was judged poor.
+        assert vp.clamp_steps(None) == 40
+        assert vp.clamp_steps("fast") == 40
 
     def test_guidance_stays_in_the_documented_range(self):
         assert vp.clamp_guidance(1.5) == 1.5
         assert vp.clamp_guidance(9) == 3.0
         assert vp.clamp_guidance(0) == 1.0
-        assert vp.clamp_guidance(None) == 1.5
+        assert vp.clamp_guidance(None) == 2.0
 
 
 class TestCommand:
     def test_it_is_the_engines_own_invocation(self):
         cmd = vp.engine_command("latentsync-1.6", "in.mp4", "in.wav", "out.mp4", 20, 1.5, 7, "tmp", python="py")
         assert cmd[:3] == ["py", "-m", "scripts.inference"]
-        assert "--enable_deepcache" in cmd
+        assert cmd[cmd.index("--guidance_scale") + 1] == "1.5"
         assert cmd[cmd.index("--video_path") + 1] == "in.mp4"
         assert cmd[cmd.index("--audio_path") + 1] == "in.wav"
         assert cmd[cmd.index("--video_out_path") + 1] == "out.mp4"
         assert cmd[cmd.index("--inference_steps") + 1] == "20"
         assert cmd[cmd.index("--seed") + 1] == "7"
+
+    def test_deepcache_is_off_unless_asked_for(self):
+        # DeepCache trades mouth detail for speed; quality is the default.
+        plain = vp.engine_command("latentsync-1.6", "a", "b", "c", 40, 2.0, 1, "t", python="py")
+        assert "--enable_deepcache" not in plain
+        fast = vp.engine_command("latentsync-1.6", "a", "b", "c", 40, 2.0, 1, "t", python="py", deepcache=True)
+        assert "--enable_deepcache" in fast
+        assert vp.DEEPCACHE is (os.environ.get("VOICEFORGE_PRESENTER_DEEPCACHE", "0") == "1")
 
     def test_config_and_checkpoint_travel_together(self):
         # A 512 px config with a 256 px checkpoint (or the reverse) loads and

@@ -228,7 +228,9 @@ POST /api/v1/presenter
 
 Both ids are optional and fall back to the defaults; each presenter and voice card has a copy button for its id. Instead of `text` you can send `audio_job_id` (a finished TTS job) or `audio_url`. The call returns a job: poll `/api/v1/jobs/{id}` until it is done, then pass its `video_url` to `POST /api/v1/video` as the intro or outro clip. Text is limited to 900 characters, since a presenter clip is an intro or an outro and the engine stops at 90 seconds of audio.
 
-**Status.** Recordings work on Modal, using LatentSync 1.6 on an L4 GPU: a 7.7-second line took about 4.5 minutes and cost roughly six cents. Still images are not available yet — no engine is installed for them. Colab and Kaggle do not run presenter video yet.
+**Status.** Recordings work on Modal, using LatentSync 1.6 on an L4 GPU. Since Oct 2026 it runs at quality settings: 40 steps, guidance 2.0, DeepCache off (it used to run 20 steps, guidance 1.5, DeepCache on). Lip sync is sharper, but each clip takes roughly 3× longer. On the old settings a 7.7-second line took about 4.5 minutes and about six cents; expect roughly 12–15 minutes and $0.15–0.20 now (estimate). A workflow can still ask for `"steps": 20` to go faster. Still images are not available yet — no engine is installed for them.
+
+**Better lip sync comes from the recording too:** face the camera, keep the face large and well lit, never cover the mouth, keep head turns small, and actually talk in the original footage. Lip sync is likely weaker for Nepali than for English, since the engine was trained mostly on English speech. The lip-sync score under each clip (above 6 is good) tells you whether a change helped.
 
 Use your own face, a generated or fictional one, or a real person who has given you explicit permission. Every upload asks which, and needs a confirmation.
 
