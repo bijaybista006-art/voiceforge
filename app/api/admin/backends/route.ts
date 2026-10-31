@@ -13,7 +13,8 @@ import {
   setActiveSelection,
   updateBackend,
 } from "@/lib/server/backends";
-import { isRedisConfigured } from "@/lib/server/redis";
+import { getSettings, isRedisConfigured } from "@/lib/server/redis";
+import { notebookLinks } from "@/lib/notebookLinks";
 import { backendPatchSchema, providerSchema } from "@/lib/server/backendPatch";
 
 export const runtime = "nodejs";
@@ -21,10 +22,16 @@ export const dynamic = "force-dynamic";
 
 
 export async function GET() {
-  const [backends, active] = await Promise.all([listBackends(), getActiveSelection()]);
+  const [backends, active, settings] = await Promise.all([
+    listBackends(),
+    getActiveSelection(),
+    getSettings(),
+  ]);
   return NextResponse.json({
     backends,
     active,
+    // The Colab / Kaggle buttons: your saved copies, in your dedicated account.
+    notebooks: notebookLinks(settings),
     storageConnected: isRedisConfigured(),
     registrationTokenSet: Boolean(process.env.REGISTRATION_TOKEN),
     backendSecretSet: Boolean(process.env.BACKEND_SECRET),
