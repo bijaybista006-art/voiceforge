@@ -14,7 +14,7 @@ Makes short video clips from a text prompt with [Wan 2.2 TI2V-5B](https://huggin
 | Host | How | Profile | Default |
 |---|---|---|---|
 | Modal | `modal/voiceforge_wan.py`, its own app and image on an L40S | `full`: bf16, whole model on the GPU | 720p, 121 frames (~5 s) |
-| Colab / Kaggle | Mounted under `/wan` in the voice server when `ENABLE_AI_VIDEO = True` in the notebook | `low_vram`: 4-bit NF4, fp16, tiled VAE (~7 GB VRAM) | 480p, 121 frames |
+| Colab / Kaggle | Mounted under `/wan` in the voice server (`ENABLE_AI_VIDEO = True`, the default); installs only when the backend's **AI video** switch in Admin → Backends is on | `low_vram`: 4-bit NF4, fp16, tiled VAE (~7 GB VRAM) | 480p, 121 frames |
 
 On a single-GPU notebook a clip takes the voice server's GPU lock, so narration waits until it finishes. On Kaggle T4 x2 the clip runs on the second GPU and narration is unaffected.
 

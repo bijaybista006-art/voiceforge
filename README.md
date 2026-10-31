@@ -211,7 +211,7 @@ A presenter is the face that speaks your intro and outro. Everything else in a v
 
 The first presenter becomes the default. `GET /api/v1/presenters` lists them, so a workflow can name a different one for a single video.
 
-**Where it renders.** Presenter video uses the same registered backends as voice, in the same order, among the ones that report the engine. Each backend card in **Admin → Backends** has a **Video** switch, separate from Enable, so a notebook can keep doing voice while video goes elsewhere or nowhere. The Presenters page says, per kind, whether anything connected can render it right now and why not.
+**Where it renders.** Presenter video uses the same registered backends as voice, in the same order, among the ones that report the engine. Each backend card in **Admin → Backends** has three **Use for** switches — **Voice**, **Presenter** and **AI video** — separate from Enable, so for example Modal (paid) can be kept out of video while the free notebooks still do everything. Every feature keeps the Colab → Kaggle → Modal order among the backends whose switch is on. The Presenters page says, per kind, whether anything connected can render it right now and why not.
 
 **Make a clip in the studio.** Open **Presenter Video**, type the line, choose a voice and a presenter, and press Generate. The page shows which step is running, then the finished MP4 with a download button, a link, and its measured lip-sync score.
 
@@ -247,7 +247,7 @@ modal run modal/voiceforge_wan.py::download
 
 It runs on an L40S and shuts down after 2 minutes idle. Expect roughly 5–10 minutes per 5-second 720p clip — around $0.20–0.35 if the L40S is still about $2/hour (check modal.com/pricing). These are estimates until the first real runs. Status checks use a CPU-only address, so they never wake the GPU.
 
-**Or on Colab / Kaggle.** Set `ENABLE_AI_VIDEO = True` in Cell 0 of the notebook. It installs a second environment and downloads ~25 GB in the background (15–20 minutes; voice works meanwhile). It uses a 4-bit version of the model to fit a T4 and defaults to 480p, roughly 10–20 minutes per clip. On a single GPU, narration waits while a clip renders. **Kaggle "GPU T4 x2"** puts clips on the second GPU, so narration never waits. If a notebook runs out of memory, the clip moves to the next backend (Modal) automatically.
+**Or on Colab / Kaggle.** On by default (`ENABLE_AI_VIDEO = True` in Cell 0) and controlled from the backend's **AI video** switch in Admin → Backends: when it is on, the session installs a second environment and downloads ~25 GB in the background (15–20 minutes; voice works meanwhile); when it is off, nothing is downloaded. Turning it on while a notebook runs starts the install at its next heartbeat (within ~2.5 minutes). It uses a 4-bit version of the model to fit a T4 and defaults to 480p, roughly 10–20 minutes per clip. On a single GPU, narration waits while a clip renders. **Kaggle "GPU T4 x2"** puts clips on the second GPU, so narration never waits. If a notebook runs out of memory, the clip moves to the next backend (Modal) automatically.
 
 **Make a clip in the studio.** Open **AI Video**, describe the scene (or pick an example), choose 16:9 or 9:16 and the length, and press Generate. When it is done you get the MP4, a download button, and the settings used. **Reuse settings** loads them back, so the same seed gives the same clip and you can vary only the prompt.
 

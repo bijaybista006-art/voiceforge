@@ -156,9 +156,11 @@ export async function registerBackend(
     registeredAt: existing?.registeredAt ?? now,
     lastHeartbeat: now,
     enabled: existing?.enabled ?? true,
-    // An operator choice, like `enabled`: a restarted notebook must not
-    // quietly switch video back on.
+    // Operator choices, like `enabled`: a restarted notebook must not quietly
+    // switch a feature back on.
     ...(existing?.videoEnabled !== undefined ? { videoEnabled: existing.videoEnabled } : {}),
+    ...(existing?.voiceEnabled !== undefined ? { voiceEnabled: existing.voiceEnabled } : {}),
+    ...(existing?.clipsEnabled !== undefined ? { clipsEnabled: existing.clipsEnabled } : {}),
     priority: existing?.priority ?? DEFAULT_PRIORITY[reg.provider],
     selfRegistered: opts.selfRegistered ?? true,
     busy: false,
@@ -212,6 +214,27 @@ export function isUsableHealth(h: BackendHealthKind): boolean {
   return h === "online" || h === "busy" || h === "unverified";
 }
 
+export interface BackendFeatures {
+  voice: boolean;
+  presenter: boolean;
+  clips: boolean;
+}
+
+/**
+ * The per-feature switches as plain booleans (absent = on). The one place
+ * that reads them, so voice routing, presenter routing, clip routing and the
+ * notebook's registration answer can never disagree. Pure.
+ */
+export function backendFeatures(
+  b: Pick<RegisteredBackend, "voiceEnabled" | "videoEnabled" | "clipsEnabled">
+): BackendFeatures {
+  return {
+    voice: b.voiceEnabled !== false,
+    presenter: b.videoEnabled !== false,
+    clips: b.clipsEnabled !== false,
+  };
+}
+
 /** Every usable backend in the standard order; dispatch tries them in turn. */
 export async function usableBackends(): Promise<BackendView[]> {
   // Always the standard order (Colab -> Kaggle -> custom -> Modal), whatever
@@ -221,8 +244,8 @@ export async function usableBackends(): Promise<BackendView[]> {
   // there *yet*, not that it is broken — and excluding it would delete the
   // paid fallback exactly when the free notebooks are down, which is the one
   // moment it exists for. Dispatch tries each in turn and records why any of
-  // them refused.
-  return all.filter((b) => isUsableHealth(b.health));
+  // them refused. A backend with its Voice switch off is skipped.
+  return all.filter((b) => isUsableHealth(b.health) && backendFeatures(b).voice);
 }
 
 // --- auth for machine endpoints ------------------------------------------

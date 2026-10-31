@@ -18,7 +18,14 @@
  */
 
 import type { BackendProvider, BackendView } from "@/lib/types";
-import { backendHeaders, getBackend, isUsableHealth, listBackends, updateBackend } from "./backends";
+import {
+  backendFeatures,
+  backendHeaders,
+  getBackend,
+  isUsableHealth,
+  listBackends,
+  updateBackend,
+} from "./backends";
 import { putBlob } from "./blob";
 import { JobError, callbackToken, getJob, saveJob, type Job } from "./jobs";
 import { getRedis, kvDel, kvGet, kvSet } from "./redis";
@@ -234,14 +241,14 @@ export async function discoverMissingWan(timeoutMs = 15_000): Promise<boolean> {
 
 /**
  * Which backends may make a clip, in the order given (listBackends returns
- * the standard order). Pure. `videoEnabled` is the per-backend video switch
- * presenters already honour; it means "no video work here", so clips too.
+ * the standard order). Pure. Honours the backend's own "AI video" switch
+ * (clipsEnabled), not the Presenter one.
  */
 export function pickClipBackends(backends: BackendView[]): BackendView[] {
   return backends.filter(
     (b) =>
       isUsableHealth(b.health) &&
-      b.videoEnabled !== false &&
+      backendFeatures(b).clips &&
       !!b.wanUrl &&
       (b.wanCapabilities ?? []).includes(CLIP_CAPABILITY)
   );
@@ -261,8 +268,10 @@ export interface ClipReadiness {
 /** Can a clip be made right now — and if not, why not? Pure. */
 export function clipReadiness(backends: BackendView[]): ClipReadiness {
   const usable = pickClipBackends(backends);
+  // A backend with AI video switched off is not installing anything worth
+  // mentioning — a notebook skips the install entirely in that case.
   const notes = backends
-    .filter((b) => b.wanNote && isUsableHealth(b.health) && !usable.includes(b))
+    .filter((b) => b.wanNote && isUsableHealth(b.health) && backendFeatures(b).clips && !usable.includes(b))
     .map((b) => `${b.provider}: ${b.wanNote}`);
   if (usable.length) {
     return {
@@ -273,8 +282,11 @@ export function clipReadiness(backends: BackendView[]): ClipReadiness {
     };
   }
   const capable = backends.filter((b) => (b.wanCapabilities ?? []).includes(CLIP_CAPABILITY));
-  if (capable.length && capable.every((b) => b.videoEnabled === false)) {
-    return { ready: false, reason: "Video is switched off on every backend that can make clips. Turn it on in Admin → Backends." };
+  if (capable.length && capable.every((b) => !backendFeatures(b).clips)) {
+    return {
+      ready: false,
+      reason: "AI video is switched off on every backend that can make clips. Turn it on in Admin → Backends.",
+    };
   }
   if (capable.length) {
     return { ready: false, reason: "The backend that makes clips is offline. Start it, or check Admin → Backends." };

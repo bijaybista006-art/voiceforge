@@ -51,7 +51,9 @@ vi.mock("../server/jobs", () => {
   };
 });
 
-vi.mock("../server/backends", () => ({
+vi.mock("../server/backends", async () => ({
+  // The real predicates, so a copy can never drift from what routing uses.
+  backendFeatures: (await vi.importActual<typeof import("../server/backends")>("../server/backends")).backendFeatures,
   backendHeaders: () => ({ "Content-Type": "application/json" }),
   getBackend: async (p: string) => backends.find((b) => b.provider === p) ?? null,
   listBackends: async () => backends,
@@ -189,7 +191,7 @@ describe("where clips go", () => {
   it("keeps the standard order and skips offline, video-off and not-ready backends", () => {
     const list: any[] = [
       { ...kaggle(), provider: "colab", health: "offline" },
-      { ...kaggle(), videoEnabled: false },
+      { ...kaggle(), clipsEnabled: false },
       { ...kaggle(), provider: "custom", wanCapabilities: [] },
       modal(),
     ];
@@ -199,7 +201,7 @@ describe("where clips go", () => {
   it("explains why no clip can be made, as the next thing to do", () => {
     expect(clipReadiness([]).reason).toMatch(/voiceforge_wan\.py|ENABLE_AI_VIDEO/);
     expect(clipReadiness([{ ...modal(), health: "offline" }] as any).reason).toMatch(/offline/);
-    expect(clipReadiness([{ ...modal(), videoEnabled: false }] as any).reason).toMatch(/switched off/);
+    expect(clipReadiness([{ ...modal(), clipsEnabled: false }] as any).reason).toMatch(/AI video is switched off/);
     const installing = { ...kaggle(), wanCapabilities: [], wanNote: "it is still installing AI video (downloading)" };
     expect(clipReadiness([installing] as any).reason).toMatch(/installing/);
     const ready = clipReadiness([installing, modal()] as any);

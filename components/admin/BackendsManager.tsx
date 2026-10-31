@@ -58,6 +58,28 @@ const NOTEBOOK = "colab/voiceforge_server.ipynb";
 const COLAB_URL = `https://colab.research.google.com/github/${REPO}/blob/main/${NOTEBOOK}`;
 const KAGGLE_URL = `https://www.kaggle.com/kernels/welcome?src=https://github.com/${REPO}/blob/main/${NOTEBOOK}`;
 
+/**
+ * The per-backend feature switches (absent = on). `videoEnabled` is the
+ * Presenter switch — its name predates AI video and stored rows keep it.
+ */
+const FEATURE_SWITCHES = [
+  {
+    field: "voiceEnabled",
+    label: "Voice",
+    hint: "Narration (text to speech). Off: voice goes to the next backend in the order.",
+  },
+  {
+    field: "videoEnabled",
+    label: "Presenter",
+    hint: "Lip-synced presenter clips. Off: presenter clips go to the next backend.",
+  },
+  {
+    field: "clipsEnabled",
+    label: "AI video",
+    hint: "Wan text-to-video clips. Off: clips go to the next backend, and a notebook skips the ~25 GB install.",
+  },
+] as const;
+
 function ago(seconds: number): string {
   if (seconds < 60) return `${seconds}s ago`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
@@ -388,22 +410,6 @@ $1redeploy. Registrations are stored there.
                 >
                   {b.enabled ? "Disable" : "Enable"}
                 </Button>
-                {/* Presenter video only. Voice and slideshow rendering never
-                    read this, so switching it cannot change where narration
-                    goes — it just keeps this backend out of video work. */}
-                <Button
-                  size="sm"
-                  disabled={busy !== null}
-                  title="Whether this backend may be used for presenter video. Voice is not affected."
-                  onClick={() =>
-                    void patch(
-                      { provider: b.provider, videoEnabled: b.videoEnabled === false },
-                      "toggle-video"
-                    )
-                  }
-                >
-                  {b.videoEnabled === false ? "Video: off" : "Video: on"}
-                </Button>
                 <button
                   type="button"
                   disabled={busy !== null}
@@ -414,6 +420,43 @@ $1redeploy. Registrations are stored there.
                   <IconTrash className="h-4 w-4" />
                 </button>
               </div>
+            </div>
+            {/* Per-feature switches. Each only keeps this backend out of that
+                one kind of work; Disable above still turns the whole backend
+                off. Order stays Colab → Kaggle → Modal for every feature. */}
+            <div className="flex flex-wrap items-center gap-2 border-t border-line bg-surface2/60 px-5 py-2.5">
+              <span className="mr-1 text-[11.5px] font-medium uppercase tracking-[0.08em] text-faint">
+                Use for
+              </span>
+              {FEATURE_SWITCHES.map((f) => {
+                const on = b[f.field] !== false;
+                return (
+                  <button
+                    key={f.field}
+                    type="button"
+                    role="switch"
+                    aria-checked={on}
+                    disabled={busy !== null || !b.enabled}
+                    title={f.hint}
+                    onClick={() => void patch({ provider: b.provider, [f.field]: !on }, `toggle-${f.field}`)}
+                    className={`inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium transition-colors disabled:opacity-40 ${
+                      on
+                        ? "border-brand-600/30 bg-brand-50 text-brand-700"
+                        : "border-line bg-white text-faint line-through decoration-faint/60"
+                    }`}
+                  >
+                    <span
+                      aria-hidden
+                      className={`h-2 w-2 rounded-full ${on ? "bg-ready" : "border border-faint"}`}
+                    />
+                    {f.label}
+                    <span className="sr-only">{on ? " on" : " off"}</span>
+                  </button>
+                );
+              })}
+              {!b.enabled ? (
+                <span className="text-[11.5px] text-faint">Enable the backend to change these.</span>
+              ) : null}
             </div>
           </div>
         );
