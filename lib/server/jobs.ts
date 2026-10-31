@@ -336,7 +336,7 @@ export async function createAndDispatchJob(
 
   const id = crypto.randomUUID();
   const now = Date.now();
-  let job: Job = {
+  const job: Job = {
     id,
     status: "queued",
     mode: input.mode,

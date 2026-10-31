@@ -126,11 +126,41 @@ export function SettingsForm({
         </div>
       </Field>
 
+      {/* Notebooks: what the "Open my … notebook" buttons on Admin → Backends open. */}
       <Field
-        label="Kaggle notebook URL"
-        hint="Shown in the Backends connect dialog once that page exists."
+        label="Google account for Colab"
+        hint="The dedicated Gmail your GPU notebooks live in. Colab buttons open in this account when several are signed in."
       >
         <Input
+          id="settings-google-account"
+          type="email"
+          placeholder="voiceforge.gpu@gmail.com"
+          value={values.googleAccount}
+          onChange={(e) => patch({ googleAccount: e.target.value })}
+          className="font-mono text-xs"
+        />
+      </Field>
+
+      <Field
+        label="My Colab notebook"
+        hint="Your saved copy. In Colab: File → Save a copy in Drive, then paste the address from the browser bar."
+      >
+        <Input
+          id="settings-colab-notebook"
+          type="url"
+          placeholder="https://colab.research.google.com/drive/…"
+          value={values.colabNotebookUrl}
+          onChange={(e) => patch({ colabNotebookUrl: e.target.value })}
+          className="font-mono text-xs"
+        />
+      </Field>
+
+      <Field
+        label="My Kaggle notebook"
+        hint="Your saved copy, opened in the account signed in on kaggle.com. Paste its address from the browser bar."
+      >
+        <Input
+          id="settings-kaggle-notebook"
           type="url"
           placeholder="https://www.kaggle.com/code/…"
           value={values.kaggleNotebookUrl}
@@ -157,7 +187,7 @@ export function SettingsForm({
             setPronunciationText(e.target.value);
             patch({ pronunciations: parsePronunciations(e.target.value) });
           }}
-          className="mt-3 w-full max-w-2xl resize-y rounded-xl border border-line bg-white px-3.5 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-brand-600"
+          className="mt-3 w-full max-w-2xl resize-y rounded-xl border border-line bg-surface px-3.5 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-brand-600"
         />
         <p className="mt-1.5 text-[12px] text-faint">
           {Object.keys(values.pronunciations ?? {}).length} of 200 entries. Takes effect on the
@@ -197,7 +227,7 @@ export function SettingsForm({
             value={values.nepaliModel ?? ""}
             placeholder="original (t3_mtl_nepali_merged)"
             onChange={(e) => patch({ nepaliModel: e.target.value.trim() })}
-            className="h-9 w-64 rounded-lg border border-line bg-white px-3 font-mono text-[12.5px] text-ink"
+            className="h-9 w-64 rounded-lg border border-line bg-surface px-3 font-mono text-[12.5px] text-ink"
             aria-label="Nepali model file"
           />
           {values.nepaliModel ? (
@@ -256,7 +286,7 @@ export function SettingsForm({
             setNepaliText(e.target.value);
             patch({ nepaliPronunciations: parsePronunciations(e.target.value) });
           }}
-          className="mt-3 w-full max-w-2xl resize-y rounded-xl border border-line bg-white px-3.5 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-brand-600"
+          className="mt-3 w-full max-w-2xl resize-y rounded-xl border border-line bg-surface px-3.5 py-2.5 font-mono text-[12.5px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-brand-600"
         />
         <p className="mt-1.5 text-[12px] text-faint">
           {Object.keys(values.nepaliPronunciations ?? {}).length} of 200 entries.

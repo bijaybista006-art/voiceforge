@@ -77,6 +77,8 @@ export interface BackendStatus {
   mode?: ConnectionMode;
   /** voice_ids currently cached on the backend (from /health). */
   remoteVoices?: string[];
+  /** Registry health of the serving backend ("online" / "busy" / …), for the studio's status pill. */
+  health?: string;
 }
 
 export interface GenerateResult {

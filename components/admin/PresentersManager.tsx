@@ -1,5 +1,7 @@
 "use client";
 
+import { SkeletonCard } from "@/components/ui/Kit";
+import { confirmAction } from "@/lib/confirm";
 import { uploadDirect } from "@/lib/directUpload";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "@/lib/toast";
@@ -97,7 +99,13 @@ export function PresentersManager() {
   }
 
   async function remove(p: PresenterView) {
-    if (!window.confirm(`Delete "${p.name}"? The file is removed too.`)) return;
+    const ok = await confirmAction({
+      title: `Delete "${p.name}"?`,
+      body: "The presenter and its file are removed. This can't be undone.",
+      confirmLabel: "Delete presenter",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await fetch(`/api/admin/presenters/${encodeURIComponent(p.id)}`, { method: "DELETE" });
@@ -108,7 +116,12 @@ export function PresentersManager() {
   }
 
   if (!data) {
-    return <div className="glass-card px-5 py-8 text-center text-sm text-muted">Loading…</div>;
+    return (
+      <div className="grid gap-3" aria-busy="true" aria-label="Loading">
+        <SkeletonCard lines={3} />
+        <SkeletonCard lines={2} />
+      </div>
+    );
   }
 
   return (

@@ -53,6 +53,15 @@ export function Waveform({ pcm, trim, onTrimChange, height = 96 }: WaveformProps
     const endX = (trim.end / durationSec) * width;
     const mid = height / 2;
     const samplesPerPx = samples.length / width;
+    // Canvas can't use CSS classes: read the theme's tokens at draw time so
+    // the waveform is legible in light and dark.
+    const css = getComputedStyle(document.documentElement);
+    const token = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+    const colors = {
+      trim: `rgb(${token("--audio", "37 99 235")})`,
+      rest: `rgb(${token("--faint", "148 163 184")} / 0.45)`,
+      handle: `rgb(${token("--ink", "15 23 42")})`,
+    };
 
     for (let x = 0; x < width; x++) {
       const from = Math.floor(x * samplesPerPx);
@@ -64,7 +73,7 @@ export function Waveform({ pcm, trim, onTrimChange, height = 96 }: WaveformProps
         if (samples[i] > max) max = samples[i];
       }
       const inTrim = x >= startX && x <= endX;
-      ctx.fillStyle = inTrim ? "#2563eb" : "rgba(148,163,184,0.45)";
+      ctx.fillStyle = inTrim ? colors.trim : colors.rest;
       const y0 = mid + min * (mid - 3);
       const y1 = mid + max * (mid - 3);
       ctx.fillRect(x, y1, 1, Math.max(1, y0 - y1));
@@ -72,7 +81,7 @@ export function Waveform({ pcm, trim, onTrimChange, height = 96 }: WaveformProps
 
     // trim handles — a hairline plus a rounded grip
     for (const x of [startX, endX]) {
-      ctx.fillStyle = "#0f172a";
+      ctx.fillStyle = colors.handle;
       ctx.fillRect(Math.round(x) - 1, 0, 2, height);
       ctx.beginPath();
       ctx.roundRect(Math.round(x) - 3.5, mid - 11, 7, 22, 3.5);

@@ -6,6 +6,16 @@ The web app runs on Vercel. The AI models run on a free GPU you control — Goog
 
 **📘 [Full step-by-step guide with screenshots-style instructions →](docs/setup-guide.html)** (open it in a browser)
 
+### Finding your way around
+
+The app has two sections, each with its own sidebar. One button in the header (**Go to Admin** / **Go to Studio**) moves between them, and the Light / Dark / System switch next to it is remembered on each device.
+
+| Studio — making things | Admin — running the platform |
+|---|---|
+| `/studio` Home · `/studio/speech` Text to Speech · `/studio/presenter` Presenter Video · `/studio/ai-video` AI Video · `/studio/library` My Library | `/admin` Dashboard · Backends · Voices · Presenters · Training data · API Keys · Jobs · API & n8n · Settings |
+
+The studio shows the GPU as just **Ready**, **Busy** or **Offline**; GPU names, addresses and routing live in Admin. Old links (`/`, `/speech`, `/library`, …) redirect to the new pages. Screenshots of every page: [docs/redesign-screenshots](docs/redesign-screenshots).
+
 ---
 
 ## One-time setup (≈15 minutes)
@@ -60,7 +70,7 @@ Vercel hosts the app and nothing else: there is no Vercel storage product to add
 
 Before the first run, paste your app URL and `REGISTRATION_TOKEN` into **Cell 0** — Admin → Backends shows a copy-ready snippet with both.
 
-**Next time, reopen your saved copy** (Colab: *File → Save a copy in Drive* once; Kaggle: *Your Work*). The platform remembers its access to your secrets, so it stops asking — and Cell 1 prints a notice when a newer notebook is available. If the one-click start ever misbehaves, set `ONE_CLICK_START = False` in Cell 0 to use the classic cells (those need *Runtime → Restart session* after Cell 1).
+**Open it from VoiceForge every time.** Save the notebook once (Colab: *File → Save a copy in Drive*; Kaggle: *Save Version → Quick Save*), then paste its address into **Admin → Settings → My Colab notebook / My Kaggle notebook**, and your dedicated Gmail into **Google account for Colab**. Admin → Backends then shows **Open my Colab notebook** and **Open my Kaggle notebook**: your saved copies, so the platform remembers its access to your secrets and stops asking, and Colab opens in that Gmail (Google's `authuser`, which works when that account is signed in in the same browser). Kaggle has no account switch in links; it uses whoever is signed in on kaggle.com. Cell 1 prints a notice when a newer notebook is available; only then use the fresh-copy links and save the new copy's address in Settings. If the one-click start ever misbehaves, set `ONE_CLICK_START = False` in Cell 0 to use the classic cells (those need *Runtime → Restart session* after Cell 1).
 
 **Leave the Colab tab open.** Close it and your backend dies. The tunnel URL is new every session, but you never see it: the notebook re-registers and heartbeats every 60 seconds.
 
@@ -68,9 +78,9 @@ Before the first run, paste your app URL and `REGISTRATION_TOKEN` into **Cell 0*
 
 1. Open your app → **Admin → Backends**.
 2. Within about a minute the Colab card turns **Online**, showing the GPU.
-3. Press **Test** if you want proof it answers.
+3. Press **Test connection** if you want proof it answers.
 
-That's it — no URL to paste anywhere. The studio asks the server which backend to use on every request, so you can switch between Modal, Colab, Kaggle and Custom (or leave it on **Auto**) without touching the studio.
+That's it — no URL to paste anywhere. The studio asks the server which backend to use on every request: the first healthy one in the fixed order Colab → Kaggle → Custom → Modal. The **Serving now** panel at the top of Backends shows which one that is.
 
 ---
 
@@ -78,7 +88,7 @@ That's it — no URL to paste anywhere. The studio asks the server which backend
 
 ### Step 4 — Add your voice (once, ever)
 
-Either in the studio's **Voice** panel, or under **Admin → Voices**:
+Either in the **Voice** panel on **Text to Speech**, or under **Admin → Voices**:
 
 1. **Record** — 15–20 seconds. Quiet room, phone or laptop mic is fine, no music, natural pace. Read a paragraph from any article.
 2. **Type the transcript** — exactly what you said, word for word. This matters more than you'd think; the clone gets noticeably worse without it.
@@ -104,7 +114,7 @@ A 20-minute video is roughly 2,800–3,000 words, which becomes 45–55 chunks.
 
 Generate a single chunk first and listen before committing to a full run. (The default backend runs Chatterbox only — Qwen3-TTS's dependencies conflict with Chatterbox's and the two can't share one Colab environment. The **A/B compare** button enables itself automatically if a backend ever reports both models.)
 
-Then nudge **Expressiveness**: 0.4 is right for factual narration. Push it to 0.7+ only if you want drama.
+Then open **Advanced settings** and nudge **Expressiveness**: 0.4 is right for factual narration. Push it to 0.7+ only if you want drama.
 
 Twenty seconds of testing here saves you regenerating twenty minutes of audio.
 
@@ -239,7 +249,7 @@ Use your own face, a generated or fictional one, or a real person who has given 
 
 Describe a scene and get a short 24 fps clip for b-roll, intros or YouTube Shorts. It uses **Wan 2.2 TI2V-5B** (Alibaba, Apache 2.0, fine for commercial YouTube use). Clips are 2, 3.4 or 5 seconds, 16:9 or 9:16, at 720p or 480p.
 
-**Turn it on (Modal, recommended).** The **Deploy Modal backend** workflow deploys the video app (`modal/voiceforge_wan.py`) after voice, and downloads the weights (~25 GB) into a Modal Volume the first time. Then press **Test** on the Modal card in **Admin → Backends**. The AI Video page says **Ready · modal** once it works. By hand:
+**Turn it on (Modal, recommended).** The **Deploy Modal backend** workflow deploys the video app (`modal/voiceforge_wan.py`) after voice, and downloads the weights (~25 GB) into a Modal Volume the first time. Then press **Test connection** on the Modal card in **Admin → Backends**. The AI Video page says **Ready · modal** once it works. By hand:
 
 ```bash
 modal deploy modal/voiceforge_wan.py
@@ -270,7 +280,7 @@ It returns a job. Poll `/api/v1/jobs/{id}` (every ~60 s is plenty) until it is d
 | What you see | What's wrong | Fix |
 |---|---|---|
 | `ValueError`/`ModuleNotFoundError` in Cell 2 importing `chatterbox`, or dozens of red `pip` "X requires Y" lines in Cell 1 | Colab/Kaggle's huge preinstalled package set drags numpy/transformers/safetensors to newer versions than chatterbox-tts declares ([known chatterbox issue](https://huggingface.co/ResembleAI/chatterbox/discussions/19)); a copy of numpy can also already be loaded in memory before Cell 1 ever runs, which a plain reinstall can't fix | Cell 1 force-pins the exact versions chatterbox-tts needs (`numpy==1.26.4`, `transformers==5.2.0`, `safetensors==0.5.3`). Always **Run All → restart when Cell 1 tells you to → Run All again from the top.** Never run cells individually or skip Cell 1 — that sequence is always correct on both platforms. The other red "requires numpy>=2" lines (jax, opencv, rasterio, etc.) are unrelated packages the backend never imports — ignore them. |
-| **Connect** does nothing | Colab tab closed, or the URL expired | Re-run Cell 3, paste the new URL |
+| Studio says **GPU Offline** | Colab/Kaggle tab closed, or the session ended | Start the notebook again (**Admin → Backends → Open notebook**). The studio re-checks every 30 s, or press **Check again** |
 | `No GPU` error in Cell 2 | Runtime is on CPU — on Kaggle this often happens right *after* the restart the numpy fix requires, since Kaggle can silently detach the accelerator on restart | Colab: Runtime → Change runtime type → T4 GPU → **Run all again**. Kaggle: re-check the **Accelerator** setting in the session sidebar (it may have reset to **None**), set it back to GPU T4 x2/P100, confirm **Internet** is still On, then **Run all again**. |
 | Voice doesn't sound like you | Sample too short, noisy, or transcript missing/wrong | Re-record 20 clean seconds. Type the transcript exactly. |
 | Words are slurred or rushed | Chunk too long, or unusual words | Break the sentence up. Spell tricky words phonetically in the script. |

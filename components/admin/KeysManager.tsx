@@ -1,5 +1,7 @@
 "use client";
 
+import { SkeletonCard } from "@/components/ui/Kit";
+import { confirmAction } from "@/lib/confirm";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "@/lib/toast";
 import { Button } from "@/components/ui/Button";
@@ -93,9 +95,13 @@ export function KeysManager() {
   }
 
   async function revoke(key: ApiKeyView) {
-    if (!window.confirm(`Revoke "${key.name}"? Anything using it stops working immediately.`)) {
-      return;
-    }
+    const ok = await confirmAction({
+      title: `Revoke "${key.name}"?`,
+      body: "Anything using this key (n8n, scripts) stops working immediately. This can't be undone.",
+      confirmLabel: "Revoke key",
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await fetch(`/api/admin/keys?id=${encodeURIComponent(key.id)}`, { method: "DELETE" });
@@ -106,7 +112,12 @@ export function KeysManager() {
   }
 
   if (!data) {
-    return <div className="glass-card px-5 py-8 text-center text-sm text-muted">Loading…</div>;
+    return (
+      <div className="grid gap-3" aria-busy="true" aria-label="Loading">
+        <SkeletonCard lines={3} />
+        <SkeletonCard lines={2} />
+      </div>
+    );
   }
 
   return (

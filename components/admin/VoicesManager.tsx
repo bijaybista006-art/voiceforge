@@ -1,5 +1,7 @@
 "use client";
 
+import { SkeletonCard } from "@/components/ui/Kit";
+import { confirmAction } from "@/lib/confirm";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { decodeAudioBlob, encodeWavPcm16, formatDuration } from "@/lib/audio";
 import { LANGUAGES, SAMPLE_IDEAL_MAX_SEC, SAMPLE_IDEAL_MIN_SEC } from "@/lib/config";
@@ -68,7 +70,12 @@ export function VoicesManager() {
   }
 
   if (!data) {
-    return <div className="glass-card px-5 py-8 text-center text-sm text-muted">Loading…</div>;
+    return (
+      <div className="grid gap-3" aria-busy="true" aria-label="Loading">
+        <SkeletonCard lines={3} />
+        <SkeletonCard lines={2} />
+      </div>
+    );
   }
 
   return (
@@ -165,8 +172,14 @@ export function VoicesManager() {
               )
             }
             onDelete={() => {
-              if (!window.confirm(`Delete "${v.name}"? The clip is removed from storage.`)) return;
-              void act(`/api/admin/voices/${v.id}`, { method: "DELETE" }, `delete-${v.id}`);
+              void confirmAction({
+                title: `Delete "${v.name}"?`,
+                body: "The reference clip is removed from storage. This can't be undone.",
+                confirmLabel: "Delete voice",
+                danger: true,
+              }).then((ok) => {
+                if (ok) void act(`/api/admin/voices/${v.id}`, { method: "DELETE" }, `delete-${v.id}`);
+              });
             }}
           />
         ))
@@ -436,7 +449,7 @@ function AddVoiceCard({ disabled, onAdded }: { disabled: boolean; onAdded: () =>
         <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-[12.5px] font-medium text-muted">Reference clip</span>
-            <div className="inline-flex rounded-xl border border-line bg-white p-0.5" role="tablist">
+            <div className="inline-flex rounded-xl border border-line bg-surface p-0.5" role="tablist">
               {(["record", "upload"] as const).map((m) => (
                 <button
                   key={m}
@@ -465,7 +478,7 @@ function AddVoiceCard({ disabled, onAdded }: { disabled: boolean; onAdded: () =>
                 {readingScript ? guide.howTo : guide.ownText}
               </p>
               {readingScript && script ? (
-                <div lang={language} className="rounded-xl border border-line bg-white px-4 py-4">
+                <div lang={language} className="rounded-xl border border-line bg-surface px-4 py-4">
                   <p className="text-[18px] leading-relaxed text-ink">{script.first}</p>
                   <p className="my-2 flex items-center gap-2 text-[12px] font-medium text-brand-600">
                     <span className="h-px flex-1 bg-brand-100" />

@@ -193,3 +193,86 @@ export const IconServer = ({ className }: P) => (
     <path d="M7.5 7.25h.01M7.5 16.75h.01" />
   </svg>
 );
+
+// --- UI v2 additions ---------------------------------------------------------
+
+export const IconSun = ({ className }: P) => (
+  <svg {...base(className)}>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4" />
+  </svg>
+);
+
+export const IconMoon = ({ className }: P) => (
+  <svg {...base(className)}>
+    <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" />
+  </svg>
+);
+
+export const IconMonitor = ({ className }: P) => (
+  <svg {...base(className)}>
+    <rect x="3" y="4" width="18" height="12.5" rx="2" />
+    <path d="M8.5 20h7M12 16.5V20" />
+  </svg>
+);
+
+export const IconMenu = ({ className }: P) => (
+  <svg {...base(className)}>
+    <path d="M4 7h16M4 12h16M4 17h16" />
+  </svg>
+);
+
+export const IconChevronDown = ({ className }: P) => (
+  <svg {...base(className)}>
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+);
+
+export const IconChevronUp = ({ className }: P) => (
+  <svg {...base(className)}>
+    <path d="m6 15 6-6 6 6" />
+  </svg>
+);
+
+export const IconLibrary = ({ className }: P) => (
+  <svg {...base(className)}>
+    <rect x="3.5" y="4" width="4" height="16" rx="1" />
+    <rect x="9.5" y="4" width="4" height="16" rx="1" />
+    <path d="m16 5.2 3.6-1 3 15.4-3.6 1Z" />
+  </svg>
+);
+
+export const IconGrid = ({ className }: P) => (
+  <svg {...base(className)}>
+    <rect x="3.5" y="3.5" width="7" height="7" rx="1.5" />
+    <rect x="13.5" y="3.5" width="7" height="7" rx="1.5" />
+    <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" />
+    <rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
+  </svg>
+);
+
+export const IconCopy = ({ className }: P) => (
+  <svg {...base(className)}>
+    <rect x="8.5" y="8.5" width="11" height="11" rx="2" />
+    <path d="M15.5 8.5V6a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 6v8A1.5 1.5 0 0 0 6 15.5h2.5" />
+  </svg>
+);
+
+export const IconInfo = ({ className }: P) => (
+  <svg {...base(className)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5.5M12 7.6v.1" />
+  </svg>
+);
+
+export const IconShield = ({ className }: P) => (
+  <svg {...base(className)}>
+    <path d="M12 3 4.5 6v5.5c0 4.4 3.1 8 7.5 9.5 4.4-1.5 7.5-5.1 7.5-9.5V6Z" />
+  </svg>
+);
+
+export const IconLogout = ({ className }: P) => (
+  <svg {...base(className)}>
+    <path d="M14.5 4.5h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-3M10 16.5 5.5 12 10 7.5M5.5 12H15" />
+  </svg>
+);

@@ -370,6 +370,7 @@ export const useApp = create<AppState>((set, get) => {
             url: status.backend?.provider ?? "",
             gpu: status.backend?.gpu ?? undefined,
             modelsLoaded: (status.backend?.models ?? []) as ModelId[],
+            health: status.backend?.health,
           },
         }));
 

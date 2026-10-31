@@ -7,7 +7,7 @@ export default function JobsPage() {
   return (
     <AdminPage
       title="Jobs"
-      description="Every render started through the API. Play it, download it, or see why it failed."
+      description="Every narration, presenter clip and AI video render. Play it, download it, or see why it failed."
     >
       <JobsList />
     </AdminPage>

@@ -19,6 +19,8 @@ import { IconDownload, IconFilmSpark, IconRefresh, IconSparkle } from "../ui/Ico
 import { Input } from "../ui/Input";
 import { ProgressBar } from "../ui/ProgressBar";
 import { Select } from "../ui/Select";
+import { Disclosure, PageHeader } from "../ui/Kit";
+import { useIsAdmin } from "../studio/StudioContext";
 
 const MAX_PROMPT = 2000;
 const LAST_CLIP_KEY = "vf:ai-clip";
@@ -37,6 +39,7 @@ type Aspect = "landscape" | "vertical";
  */
 export function ClipView() {
   const { status, failed, reload } = useClipStatus();
+  const isAdmin = useIsAdmin();
 
   const [prompt, setPrompt] = useState("");
   const [aspect, setAspect] = useState<Aspect>("landscape");
@@ -117,7 +120,9 @@ export function ClipView() {
       : seedInvalid
         ? "The seed must be a whole number from 0 to 4294967295, or empty for random."
         : status && !status.ready
-          ? (status.reason ?? "No backend can make AI video right now.")
+          ? isAdmin
+            ? (status.reason ?? "No backend can make AI video right now.")
+            : "AI video isn't available right now. Try again a little later."
           : null;
 
   async function generate() {
@@ -186,27 +191,24 @@ export function ClipView() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] px-4 py-6 sm:px-6 lg:py-8">
-      <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="font-display text-2xl font-bold tracking-tight text-ink">AI Video</h1>
-          <p className="mt-1 max-w-2xl text-sm text-muted">
-            Describe a scene and get a short 24 fps clip for b-roll, intros or Shorts. Made with Wan
-            2.2 (Apache 2.0, fine for commercial YouTube use) on your own GPU.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {status ? (
-            <Badge tone={status.ready ? "video" : "neutral"} dot>
-              {status.ready ? `Ready · ${status.provider}` : "Not available"}
-            </Badge>
-          ) : null}
-          <Button size="sm" onClick={reload}>
-            <IconRefresh className="h-3.5 w-3.5" />
-            Refresh
-          </Button>
-        </div>
-      </header>
+    <div className="mx-auto w-full max-w-[1400px] px-4 py-8 sm:px-6 lg:py-10">
+      <PageHeader
+        title="AI Video"
+        description="Describe a scene and get a short clip for b-roll, intros or Shorts. Made with Wan 2.2 (Apache 2.0, fine for commercial YouTube use) on your own GPU."
+        action={
+          <>
+            {status ? (
+              <Badge tone={status.ready ? "video" : "neutral"} dot>
+                {status.ready ? (isAdmin ? `Ready · ${status.provider}` : "Ready") : "Not available"}
+              </Badge>
+            ) : null}
+            <Button size="sm" onClick={reload}>
+              <IconRefresh className="h-3.5 w-3.5" />
+              Refresh
+            </Button>
+          </>
+        }
+      />
 
       {failed ? (
         <Card>
@@ -220,18 +222,27 @@ export function ClipView() {
           <div className="flex min-w-0 flex-col gap-5">
             {status && !status.ready ? (
               <Card>
-                <p className="text-sm text-ink">
-                  <strong>Not available yet.</strong> {status.reason}
-                </p>
-                <p className="mt-2 text-[12.5px] text-muted">
-                  Already deployed? Press Test on that backend in{" "}
-                  <Link href="/admin/backends" className="text-video underline">
-                    Admin → Backends
-                  </Link>
-                  , then Refresh here.
-                </p>
+                {isAdmin ? (
+                  <>
+                    <p className="text-sm text-ink">
+                      <strong>Not available yet.</strong> {status.reason}
+                    </p>
+                    <p className="mt-2 text-[12.5px] text-muted">
+                      Already deployed? Press Test connection on that backend in{" "}
+                      <Link href="/admin/backends" className="text-video underline">
+                        Admin → Backends
+                      </Link>
+                      , then Refresh here.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-sm text-ink">
+                    <strong>AI video isn&apos;t available right now.</strong> You can still write your prompt and
+                    set it up; try Refresh in a little while.
+                  </p>
+                )}
               </Card>
-            ) : status?.also ? (
+            ) : isAdmin && status?.also ? (
               <p className="text-[12.5px] text-muted">Also: {status.also}</p>
             ) : null}
 
@@ -241,11 +252,12 @@ export function ClipView() {
                 description="Say what is in it, what moves, how the camera moves, the light and the style."
               />
               <textarea
+                aria-label="Scene description"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={5}
                 placeholder="Aerial drone shot slowly flying over a misty mountain valley at sunrise, golden light, cinematic…"
-                className="w-full resize-y rounded-xl border border-line bg-white px-4 py-3 text-[14px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-accent-600"
+                className="w-full resize-y rounded-xl border border-line bg-surface px-4 py-3 text-[14px] leading-relaxed text-ink outline-none transition-colors placeholder:text-faint focus:border-accent-600"
               />
               <div className="mt-1.5 flex flex-wrap items-start justify-between gap-2">
                 <div className="flex flex-wrap gap-1.5">
@@ -457,22 +469,24 @@ export function ClipView() {
               )}
             </Card>
 
-            <Card>
-              <CardHeader title="Use it from n8n" description="The same operation, with an API key." />
-              <pre className="overflow-x-auto rounded-xl bg-surface3 px-4 py-3 font-mono text-[11.5px] leading-relaxed text-ink">
-                {`POST /api/v1/clips
+            {/* Automation details are for the admin only. */}
+            {isAdmin ? (
+              <Disclosure title="Use it from n8n" hint="The same operation through the API, with an API key.">
+                <pre className="overflow-x-auto rounded-xl bg-surface3 px-4 py-3 font-mono text-[11.5px] leading-relaxed text-ink">
+                  {`POST /api/v1/clips
 {
   "prompt": "${(prompt.trim() || "Aerial drone shot over misty mountains…").slice(0, 60).replace(/"/g, '\\"')}${prompt.trim().length > 60 ? "…" : ""}",
   "aspect": "${aspect}",
   "num_frames": ${frames}${quality ? `,\n  "quality": "${quality}"` : ""}${seedNumber !== undefined && !seedInvalid ? `,\n  "seed": ${seedNumber}` : ""}
 }`}
-              </pre>
-              <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
-                It returns a job. Poll <code className="font-mono">/api/v1/jobs/&#123;id&#125;</code>{" "}
-                until it is done; it carries <code className="font-mono">video_url</code> and the{" "}
-                <code className="font-mono">settings</code> used, seed included.
-              </p>
-            </Card>
+                </pre>
+                <p className="mt-2 text-[12.5px] leading-relaxed text-muted">
+                  It returns a job. Poll <code className="font-mono">/api/v1/jobs/&#123;id&#125;</code> until it is
+                  done; it carries <code className="font-mono">video_url</code> and the{" "}
+                  <code className="font-mono">settings</code> used, seed included.
+                </p>
+              </Disclosure>
+            ) : null}
           </div>
         </div>
       )}
@@ -480,9 +494,20 @@ export function ClipView() {
   );
 }
 
+/**
+ * Minutes left, from how far the clip has come and how long that took. Only
+ * once there is enough progress to extrapolate from; null before that.
+ */
+export function clipMinutesLeft(progress: number, elapsedSec: number | null): number | null {
+  if (elapsedSec === null || progress < 8 || progress >= 100) return null;
+  return Math.max(1, Math.round((elapsedSec * (100 - progress)) / progress / 60));
+}
+
 function ClipProgress({ clip, startedAt, now }: { clip: ClipJob; startedAt: number | null; now: number }) {
+  const isAdmin = useIsAdmin();
   const progress = clip.progress ?? 0;
   const elapsed = startedAt ? Math.max(0, Math.round((now - startedAt) / 1000)) : null;
+  const left = clipMinutesLeft(progress, elapsed);
   const stage =
     clip.status === "queued" || progress === 0
       ? "Waiting for the GPU…"
@@ -503,13 +528,18 @@ function ClipProgress({ clip, startedAt, now }: { clip: ClipJob; startedAt: numb
       ) : (
         <ProgressBar indeterminate tone="live" label="Clip progress" />
       )}
-      <p className="mt-3 text-[12.5px] leading-relaxed text-muted">
-        Loading the model, then denoising every frame together — this is the slow part. A cold GPU
-        adds a minute or two before progress starts.
+      <p className="mt-3 text-[13px] font-medium text-ink" data-testid="clip-eta">
+        {left !== null
+          ? `About ${left} min left`
+          : "Estimating time left… a clip usually takes several minutes."}
+      </p>
+      <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+        The GPU loads the model, then works on every frame together. A GPU that was asleep adds a minute or two
+        before progress starts.
       </p>
       <p className="mt-3 font-mono text-[12px] tabular-nums text-muted">
         {elapsed !== null ? `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")} elapsed` : "running"}
-        {clip.backend ? ` · ${clip.backend}` : ""}
+        {isAdmin && clip.backend ? ` · ${clip.backend}` : ""}
       </p>
     </div>
   );
@@ -517,12 +547,13 @@ function ClipProgress({ clip, startedAt, now }: { clip: ClipJob; startedAt: numb
 
 /** What the clip is, in numbers — enough to make it again. */
 function ClipFacts({ clip }: { clip: ClipJob }) {
+  const isAdmin = useIsAdmin();
   const s = clip.settings;
   const facts: string[] = [];
   if (s?.width && s?.height) facts.push(`${s.width}×${s.height}`);
   if (clip.duration) facts.push(`${clip.duration.toFixed(1)}s`);
   if (clip.gen_seconds) facts.push(`made in ${Math.round(clip.gen_seconds / 60)} min`);
-  if (clip.backend) facts.push(clip.backend);
+  if (isAdmin && clip.backend) facts.push(clip.backend);
   return (
     <div className="mt-3 space-y-1.5 text-[12.5px] text-muted">
       <p>{facts.join(" · ")}</p>
@@ -530,7 +561,7 @@ function ClipFacts({ clip }: { clip: ClipJob }) {
         <p>
           Seed <span className="font-mono text-ink">{s.seed}</span> · {s.steps} steps · guidance{" "}
           <span className="font-mono text-ink">{s.guidance}</span>
-          {s.profile === "low_vram" ? <span className="text-faint"> · 4-bit (notebook)</span> : null}
+          {isAdmin && s.profile === "low_vram" ? <span className="text-faint"> · 4-bit (notebook)</span> : null}
         </p>
       ) : null}
     </div>

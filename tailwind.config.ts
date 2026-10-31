@@ -1,5 +1,8 @@
 import type { Config } from "tailwindcss";
 
+/** A theme token: `rgb(var(--name) / <alpha-value>)`, so `/20` opacity still works. */
+const v = (name: string) => `rgb(var(--${name}) / <alpha-value>)`;
+
 /**
  * Design system — mirrors the Tech Notebook project: light slate ground,
  * blue brand + violet accent, white cards with soft shadows.
@@ -10,59 +13,67 @@ import type { Config } from "tailwindcss";
  */
 const config: Config = {
   content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}"],
+  // Themes are driven by data-theme on <html> (see app/layout.tsx).
+  darkMode: ["selector", '[data-theme="dark"]'],
   theme: {
     extend: {
       colors: {
-        // --- ground + surfaces (slate ramp)
-        bg: "#f1f5f9",
-        surface: "#ffffff",
-        surface2: "#f8fafc",
-        surface3: "#f1f5f9",
-        line: "#e2e8f0",
-        lineStrong: "#cbd5e1",
+        // Every colour is a CSS variable (RGB channels) defined in
+        // app/globals.css for the light AND dark theme, so these token names
+        // re-skin the whole app per theme with no dark: classes per component.
+        // --- ground + surfaces
+        bg: v("bg"),
+        surface: v("surface"),
+        surface2: v("surface2"),
+        surface3: v("surface3"),
+        line: v("line"),
+        lineStrong: v("line-strong"),
 
         // --- type
-        ink: "#0f172a",
-        muted: "#475569",
-        faint: "#94a3b8",
+        ink: v("ink"),
+        muted: v("muted"),
+        faint: v("faint"),
 
         // --- product accents. Speech = brand blue, Video = violet.
-        // Same meaning as before, re-hued to the Tech Notebook palette.
-        audio: "#2563eb",
-        audioSoft: "#2563eb14",
-        video: "#7c3aed",
-        videoSoft: "#7c3aed14",
+        audio: v("audio"),
+        audioSoft: "rgb(var(--audio) / 0.1)",
+        video: v("video"),
+        videoSoft: "rgb(var(--video) / 0.1)",
 
         // --- state. `live` amber ONLY while recording/generating.
-        live: "#f59e0b",
-        liveSoft: "#f59e0b1a",
-        danger: "#ef4444",
-        dangerSoft: "#ef44441a",
-        ready: "#22c55e",
+        live: v("live"),
+        liveSoft: "rgb(var(--live) / 0.12)",
+        danger: v("danger"),
+        dangerSoft: "rgb(var(--danger) / 0.1)",
+        ready: v("ready"),
+        readySoft: "rgb(var(--ready) / 0.12)",
 
-        // --- brand ramp (gradients + hover shades)
+        // --- brand ramp. 50/100/700 are tints and text, so they follow the
+        // theme; 300-600 are fills and stay the brand's own blue.
         brand: {
-          50: "#eff6ff",
-          100: "#dbeafe",
-          300: "#93c5fd",
-          400: "#60a5fa",
-          500: "#3b82f6",
-          600: "#2563eb",
-          700: "#1d4ed8",
-          950: "#172554",
+          50: v("brand-50"),
+          100: v("brand-100"),
+          300: v("brand-300"),
+          400: v("brand-400"),
+          500: v("brand-500"),
+          600: v("brand-600"),
+          700: v("brand-700"),
+          950: v("brand-950"),
         },
         accent: {
-          400: "#a78bfa",
-          500: "#8b5cf6",
-          600: "#7c3aed",
+          50: v("accent-50"),
+          400: v("accent-400"),
+          500: v("accent-500"),
+          600: v("accent-600"),
+          700: v("accent-700"),
         },
 
         // --- legacy aliases so nothing renders broken mid-migration
-        desk: "#f1f5f9",
-        panel: "#ffffff",
-        rule: "#e2e8f0",
-        text: "#0f172a",
-        signal: "#f59e0b",
+        desk: v("bg"),
+        panel: v("surface"),
+        rule: v("line"),
+        text: v("ink"),
+        signal: v("live"),
       },
       fontFamily: {
         display: ["var(--font-space-grotesk)", "system-ui", "sans-serif"],
@@ -74,8 +85,8 @@ const config: Config = {
         "2xl": "1rem",
       },
       boxShadow: {
-        card: "0 1px 2px rgba(15,23,42,.05), 0 4px 12px rgba(15,23,42,.05)",
-        lift: "0 8px 20px rgba(15,23,42,.08)",
+        card: "var(--shadow-card)",
+        lift: "var(--shadow-lift)",
         glow: "0 0 0 1px rgba(37,99,235,.25), 0 8px 24px -10px rgba(37,99,235,.35)",
         glowVideo: "0 0 0 1px rgba(124,58,237,.25), 0 8px 24px -10px rgba(124,58,237,.35)",
       },
