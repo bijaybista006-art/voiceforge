@@ -32,6 +32,7 @@ import gc
 import io
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -1862,6 +1863,34 @@ RAW_BASE = os.environ.get(
 )
 
 
+def _free_installer_caches() -> None:
+    """Notebooks: delete the download caches left by Cell 1's pip installs.
+
+    pip keeps every package it downloaded (torch and its CUDA libraries alone
+    are several GB) next to the installed copy. Nothing reads them again, and
+    on a notebook the presenter and AI video engines need that room. Runs once
+    at start-up, before those engines install (they install without caches).
+    """
+    home = os.path.expanduser("~")
+    freed = 0
+    for path in (os.path.join(home, ".cache", "pip"), os.path.join(home, ".cache", "uv")):
+        if not os.path.isdir(path):
+            continue
+        for root, _dirs, files in os.walk(path):
+            for name in files:
+                try:
+                    freed += os.lstat(os.path.join(root, name)).st_size
+                except OSError:
+                    pass
+        shutil.rmtree(path, ignore_errors=True)
+    try:
+        u = shutil.disk_usage("/")
+        disk = f"disk: {u.used / 1e9:.0f} of {u.total / 1e9:.0f} GB used, {u.free / 1e9:.0f} GB free"
+    except OSError:
+        disk = "disk: unknown"
+    print(f"[voiceforge] freed {freed / 1e9:.1f} GB of installer caches · {disk}", flush=True)
+
+
 def _load_presenter_module():
     """Import the presenter service, fetching its file first if it is absent.
 
@@ -1973,6 +2002,12 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
             render_mounted = True
         except Exception as e:  # noqa: BLE001
             print("[voiceforge] render routes unavailable:", e, flush=True)
+
+    if provider in ("colab", "kaggle"):
+        try:
+            _free_installer_caches()
+        except Exception as e:  # noqa: BLE001 - never stop the voice server for this
+            print("[voiceforge] could not clear installer caches:", e, flush=True)
 
     # Presenter video, notebooks only. Modal runs it as its own function. It
     # is mounted under /presenter because this app already owns /render and

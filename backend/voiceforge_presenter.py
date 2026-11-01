@@ -484,6 +484,49 @@ INSTALL_ROOT = os.environ.get("VOICEFORGE_PRESENTER_ROOT", "/tmp/voiceforge-pres
 INSTALL: Dict[str, Any] = {"state": "idle", "stage": "", "error": "", "seconds": 0}
 _INSTALL_STARTED = threading.Event()
 
+# Disk. On a notebook the voice server, this engine and (optionally) AI video
+# share one disk; a full disk breaks narration too. Each big step checks there
+# is room for it plus PRESENTER_HEADROOM_GB first, and fails with a plain
+# reason instead of filling the disk.
+PRESENTER_ENV_GB = 9  # private Python + torch + CUDA libraries
+PRESENTER_WEIGHTS_GB = 7  # LatentSync 1.5, whisper, face models, VAE
+PRESENTER_HEADROOM_GB = 6
+
+
+class DiskSpaceError(RuntimeError):
+    """Not enough free disk to start a step. Nothing was written."""
+
+
+def free_gb(path: str) -> float:
+    """Free space, in GB, on the disk that holds path (or its nearest existing parent)."""
+    p = os.path.abspath(path)
+    while not os.path.exists(p):
+        parent = os.path.dirname(p)
+        if parent == p:
+            break
+        p = parent
+    return shutil.disk_usage(p).free / 1e9
+
+
+def ensure_space(need_gb: float, path: Optional[str] = None, free: Optional[float] = None) -> None:
+    """Raise DiskSpaceError unless need_gb plus the headroom is free."""
+    have = free_gb(path or INSTALL_ROOT) if free is None else free
+    want = need_gb + PRESENTER_HEADROOM_GB
+    if have < want:
+        raise DiskSpaceError(
+            f"not enough disk space for the presenter engine: it needs about {want:.0f} GB free "
+            f"and {have:.0f} GB is left. Start a fresh session (Colab: Runtime → Disconnect and "
+            "delete runtime; Kaggle: Stop session)."
+        )
+
+
+def disk_report(path: str = "/") -> str:
+    try:
+        u = shutil.disk_usage(path)
+        return f"disk: {u.used / 1e9:.0f} of {u.total / 1e9:.0f} GB used, {u.free / 1e9:.0f} GB free"
+    except OSError:
+        return "disk: unknown"
+
 _WEIGHTS_SCRIPT = r'''
 import os, sys, urllib.request, zipfile
 from huggingface_hub import hf_hub_download, snapshot_download
@@ -529,6 +572,10 @@ def _clean_env() -> Dict[str, str]:
     # exists inside Jupyter. The engine imports matplotlib at start-up, and
     # with that value inherited it refused to start at all.
     env["MPLBACKEND"] = "Agg"
+    # No installer caches: every package would otherwise sit on disk twice
+    # (the cached download and the installed copy) — several GB on a notebook.
+    env["PIP_NO_CACHE_DIR"] = "1"
+    env["UV_NO_CACHE"] = "1"
     return env
 
 
@@ -570,6 +617,8 @@ def _install_engine() -> None:
     try:
         INSTALL["state"] = "installing"
         if not os.path.exists(marker):
+            skip_weights = os.environ.get("VOICEFORGE_PRESENTER_SKIP_WEIGHTS") == "1"
+            ensure_space(PRESENTER_ENV_GB + (0 if skip_weights else PRESENTER_WEIGHTS_GB))
             os.makedirs(INSTALL_ROOT, exist_ok=True)
 
             if not os.path.isdir(os.path.join(engine_dir, ".git")):
@@ -610,7 +659,8 @@ def _install_engine() -> None:
 
             # Skipped only by the install check in CI, which proves the
             # libraries resolve without downloading several GB of weights.
-            if os.environ.get("VOICEFORGE_PRESENTER_SKIP_WEIGHTS") != "1":
+            if not skip_weights:
+                ensure_space(PRESENTER_WEIGHTS_GB)
                 script = os.path.join(INSTALL_ROOT, "weights.py")
                 with open(script, "w", encoding="utf-8") as f:
                     f.write(_WEIGHTS_SCRIPT)
@@ -622,10 +672,10 @@ def _install_engine() -> None:
 
         ENGINE_DIR, ENGINE_PYTHON = engine_dir, python
         INSTALL.update(state="ready", stage="ready", error="", seconds=round(time.time() - t0))
-        print(f"[presenter] engine ready: {installed_engines()} ({INSTALL['seconds']}s)", flush=True)
+        print(f"[presenter] engine ready: {installed_engines()} ({INSTALL['seconds']}s) · {disk_report()}", flush=True)
     except Exception as e:  # noqa: BLE001
         INSTALL.update(state="failed", error=str(e)[:600], seconds=round(time.time() - t0))
-        print("[presenter] install failed:", e, flush=True)
+        print("[presenter] install failed:", e, "·", disk_report(), flush=True)
 
 
 def start_install_in_background() -> None:
