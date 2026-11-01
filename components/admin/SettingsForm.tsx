@@ -169,6 +169,26 @@ export function SettingsForm({
         />
       </Field>
 
+      <Field
+        label="Stop idle notebooks after"
+        hint="A Colab or Kaggle notebook that has made nothing for this long stops itself, so a forgotten tab stops using your free GPU time. Colab also gives the GPU back. 0 = never."
+      >
+        <div className="flex items-center gap-2">
+          <Input
+            id="settings-idle-stop"
+            type="number"
+            min={0}
+            max={720}
+            value={values.notebookIdleStopMinutes}
+            onChange={(e) =>
+              patch({ notebookIdleStopMinutes: Math.max(0, Math.min(720, Math.round(Number(e.target.value) || 0))) })
+            }
+            className="w-28 font-mono tabular-nums"
+          />
+          <span className="text-[13px] text-muted">minutes</span>
+        </div>
+      </Field>
+
       <div className="border-b border-line px-5 py-4">
         <p className="text-[13.5px] font-semibold text-ink">Pronunciations</p>
         <p className="mt-0.5 max-w-2xl text-[12.5px] leading-snug text-muted">

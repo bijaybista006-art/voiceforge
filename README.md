@@ -74,6 +74,10 @@ Before the first run, paste your app URL and `REGISTRATION_TOKEN` into **Cell 0*
 
 **Leave the Colab tab open.** Close it and your backend dies. The tunnel URL is new every session, but you never see it: the notebook re-registers and heartbeats every 60 seconds.
 
+**Is it up?** The bottom of Cell 2 prints one line per heartbeat (every ~2.5 min), with the address: `14:32 UTC  ● connected (kaggle) · https://….trycloudflare.com · AI video: ready · idle 12 min (stops itself at 30) · disk 46 GB free`. `✗ NOT connected` means a heartbeat failed; it retries by itself.
+
+**It stops itself when unused.** A notebook that has made nothing for 30 minutes (Admin → Settings → *Stop idle notebooks after*; 0 = never) says goodbye, shows **Offline** in Admin → Backends, and stops, so a forgotten tab stops using your free GPU time. On Colab it also gives the GPU machine back (like *Disconnect and delete runtime*). Kaggle has no way to end a session from code: Kaggle ends the idle session by itself after a while, or use the power icon → *Stop session*. Colab and Kaggle cannot be started on demand like Modal; start the notebook again when you need it.
+
 ### Step 3 — Check it's live
 
 1. Open your app → **Admin → Backends**.

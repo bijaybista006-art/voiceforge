@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { type ApiCall, mockApi, writes } from "./helpers";
+import { type ApiCall, fixtures, mockApi, writes } from "./helpers";
 
 /**
  * Every Backends button, switch and form, and the exact request each one
@@ -150,4 +150,27 @@ test("a notebook card shows its free disk and GPU memory", async ({ page }) => {
   const card = page.getByTestId("backend-colab");
   await expect(card.getByTestId("disk-free")).toContainText("46 GB free of 113");
   await expect(card.getByTestId("gpu-memory")).toContainText("3.1 / 15 GB");
+});
+
+test("a notebook that stopped itself while idle says so", async ({ page }) => {
+  const base = JSON.parse(JSON.stringify(fixtures.backends));
+  base.backends.push({
+    ...base.backends[0],
+    provider: "kaggle",
+    url: "https://k.trycloudflare.com",
+    health: "offline",
+    stoppedIdleAt: Date.now() - 5 * 60_000,
+    system: undefined,
+  });
+  await mockApi(page, (c) => (c.method === "GET" && c.path === "/api/admin/backends" ? { json: base } : undefined));
+  await page.goto("/admin/backends", { waitUntil: "networkidle" });
+  await expect(page.getByTestId("backend-kaggle").getByTestId("stopped-idle")).toContainText("Stopped itself at");
+  await expect(page.getByTestId("backend-colab").getByTestId("stopped-idle")).toHaveCount(0);
+});
+
+test("Settings has the idle-stop time, 30 minutes by default", async ({ page }) => {
+  await mockApi(page);
+  await page.goto("/admin/settings", { waitUntil: "networkidle" });
+  await expect(page.getByText("Stop idle notebooks after")).toBeVisible();
+  await expect(page.locator("#settings-idle-stop")).toHaveValue("30");
 });
