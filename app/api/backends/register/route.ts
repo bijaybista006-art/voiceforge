@@ -18,7 +18,7 @@ import {
   registerBackend,
 } from "@/lib/server/backends";
 import { heartbeatFields } from "@/lib/server/clipjobs";
-import { isRedisConfigured } from "@/lib/server/redis";
+import { getSettings, isRedisConfigured } from "@/lib/server/redis";
 
 export const runtime = "nodejs";
 
@@ -47,6 +47,7 @@ const schema = z.object({
         .optional(),
       system: z
         .object({
+          idle_seconds: z.number().optional(),
           disk_free_gb: z.number().optional(),
           disk_total_gb: z.number().optional(),
           gpus: z
@@ -55,6 +56,8 @@ const schema = z.object({
             .optional(),
         })
         .optional(),
+      // The notebook is stopping itself after sitting idle: show it Offline now.
+      stopping: z.boolean().optional(),
     })
     .optional(),
 });
@@ -94,7 +97,10 @@ export async function POST(req: NextRequest) {
   }
 
   const { status, ...registration } = body;
-  const row = await registerBackend(registration, { extra: heartbeatFields(registration.url, status) });
+  const [row, settings] = await Promise.all([
+    registerBackend(registration, { extra: heartbeatFields(registration.url, status) }),
+    getSettings(),
+  ]);
   return NextResponse.json({
     ok: true,
     provider: row.provider,
@@ -103,5 +109,8 @@ export async function POST(req: NextRequest) {
     // heartbeat, so a notebook learns of a change within one beat; it uses
     // `clips` to decide whether to install AI video at all.
     features: backendFeatures(row),
+    // A notebook stops itself after this many idle minutes (0 = never), so a
+    // forgotten tab stops spending the free GPU allowance.
+    idle_stop_minutes: settings.notebookIdleStopMinutes ?? 30,
   });
 }

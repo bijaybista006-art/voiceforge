@@ -31,6 +31,7 @@ const schema = z.object({
     .max(200)
     .refine((v) => v === "" || isEmail(v), "must be an email address")
     .optional(),
+  notebookIdleStopMinutes: z.number().int().min(0).max(720).optional(),
   defaultModel: z.enum(["chatterbox", "qwen3"]).optional(),
   defaultLanguage: z.string().min(2).max(8).optional(),
   pronunciations: z

@@ -603,6 +603,14 @@ function BackendCard({
               <IconClock className="h-3 w-3" />
               <span>{lastSeen(b)}</span>
             </div>
+            {b.health !== "offline" && typeof b.system?.idleSeconds === "number" ? (
+              <div className="flex gap-1.5" data-testid="idle">
+                <dt className="text-faint">Activity</dt>
+                <dd className="text-ink">
+                  {b.system.idleSeconds <= 0 ? "working" : `idle ${Math.floor(b.system.idleSeconds / 60)} min`}
+                </dd>
+              </div>
+            ) : null}
             {b.system?.diskFreeGb !== undefined ? (
               <div className="flex gap-1.5" data-testid="disk-free">
                 <dt className="text-faint">Disk</dt>
@@ -630,6 +638,13 @@ function BackendCard({
             <p className={`mt-2 text-[12.5px] ${lastTest.ok ? "text-ready" : "text-danger"}`}>
               {lastTest.ok ? "Test passed. " : "Test failed. "}
               <span className="text-muted">{lastTest.text}</span>
+            </p>
+          ) : null}
+          {b.health === "offline" && b.stoppedIdleAt ? (
+            <p className="mt-2 text-[12.5px] text-muted" data-testid="stopped-idle">
+              Stopped itself at{" "}
+              {new Date(b.stoppedIdleAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })} after
+              sitting idle, to save your free GPU time. Open the notebook and press Run all when you need it.
             </p>
           ) : null}
           {b.wanNote && b.clipsEnabled !== false && b.enabled ? (

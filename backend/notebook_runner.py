@@ -86,6 +86,62 @@ def with_status(payload: Dict[str, Any]) -> Dict[str, Any]:
         return payload
 
 
+# Exit code that tells Cell 2 "stopped because nothing was used": on Colab it
+# then releases the GPU machine (runtime.unassign()), like Disconnect and
+# delete runtime.
+IDLE_EXIT_CODE = 75
+
+
+def status_line(
+    provider: str,
+    url: str,
+    status: Optional[Dict[str, Any]],
+    idle_stop_minutes: Optional[int],
+    ok: bool = True,
+    error: str = "",
+    now: Optional[float] = None,
+) -> str:
+    """One line per heartbeat, so the bottom of Cell 2 always says whether
+    this backend is up, at which address, and what it is doing."""
+    stamp = time.strftime("%H:%M UTC", time.gmtime(now or time.time()))
+    if not ok:
+        return f"{stamp}  ✗ NOT connected ({provider}) · heartbeat failed: {error[:160]} · retrying"
+    parts = [f"{stamp}  ● connected ({provider})", url]
+    wan = (status or {}).get("wan") or {}
+    state = wan.get("state")
+    if state == "ready":
+        parts.append("AI video: ready")
+    elif state == "installing":
+        stage = ((wan.get("install") or {}).get("stage") or "").strip()
+        parts.append(f"AI video: installing ({stage})" if stage else "AI video: installing")
+    elif state == "failed":
+        err = ((wan.get("install") or {}).get("error") or "").strip()
+        parts.append(f"AI video: failed ({err[:80]})" if err else "AI video: failed")
+    elif state == "off":
+        parts.append("AI video: off")
+    system = (status or {}).get("system") or {}
+    idle = system.get("idle_seconds")
+    if isinstance(idle, (int, float)):
+        if idle <= 0:
+            parts.append("working")
+        else:
+            text = f"idle {int(idle // 60)} min"
+            if idle_stop_minutes:
+                text += f" (stops itself at {idle_stop_minutes})"
+            parts.append(text)
+    if isinstance(system.get("disk_free_gb"), (int, float)):
+        parts.append(f"disk {system['disk_free_gb']:.0f} GB free")
+    return " · ".join(parts)
+
+
+def should_stop(status: Optional[Dict[str, Any]], idle_stop_minutes: Optional[int]) -> bool:
+    """True once the backend has done nothing for the limit set in Admin -> Settings."""
+    if not idle_stop_minutes or idle_stop_minutes <= 0:
+        return False
+    idle = ((status or {}).get("system") or {}).get("idle_seconds")
+    return isinstance(idle, (int, float)) and idle >= idle_stop_minutes * 60
+
+
 def version_tuple(v: str) -> Tuple[int, ...]:
     return tuple(int(p) for p in re.findall(r"\d+", v or ""))
 
@@ -214,6 +270,36 @@ def _open_tunnel() -> Tuple[subprocess.Popen, str]:
     raise AssertionError  # unreachable
 
 
+def _minutes(value: Any) -> Optional[int]:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def _stop_idle(app_url: str, token: str, payload: Dict[str, Any], minutes: int, tunnel) -> None:
+    """Tell the app this backend is going away (it shows Offline at once and
+    sends work elsewhere), then end the process. Cell 2 sees IDLE_EXIT_CODE
+    and, on Colab, releases the GPU machine."""
+    _log("\n" + "=" * 62)
+    _log(f"  Nothing to do for {minutes} min: stopping to save your free GPU time.")
+    _log("  Start it again (Run all) when you need it.")
+    _log("=" * 62)
+    goodbye = dict(payload)
+    goodbye["status"] = {**(payload.get("status") or {}), "stopping": True}
+    try:
+        _register(app_url, token, goodbye)
+    except Exception as e:  # noqa: BLE001 - the app ages it out anyway
+        _log(f"  (could not tell the app: {e}; it shows Offline within a few minutes)")
+    try:
+        tunnel.kill()
+    except Exception:  # noqa: BLE001
+        pass
+    sys.stdout.flush()
+    os._exit(IDLE_EXIT_CODE)
+
+
 def _register(app_url: str, token: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     req = urllib.request.Request(
         app_url.rstrip("/") + "/api/backends/register",
@@ -250,14 +336,20 @@ def main() -> None:
 
     _log("[4/4] registering with your app...")
     heartbeat = 150
+    idle_stop: Optional[int] = None
     try:
-        result = _register(app_url, token, with_status(registration_payload(provider, public_url, gpu_name(), models, VERSION)))
+        payload = with_status(registration_payload(provider, public_url, gpu_name(), models, VERSION))
+        result = _register(app_url, token, payload)
         heartbeat = int(result.get("heartbeat_seconds", heartbeat))
+        idle_stop = _minutes(result.get("idle_stop_minutes"))
         _log("\n" + "=" * 62)
         _log("  REGISTERED - nothing to copy. Check Admin -> Backends.")
         _log(f"  provider: {provider}   heartbeat: every {heartbeat}s   ready in {time.time() - t0:.0f}s")
         _log("  " + apply_app_features(result.get("features")))
+        if idle_stop:
+            _log(f"  stops itself after {idle_stop} min with nothing to do (Admin -> Settings)")
         _log("=" * 62 + "\n")
+        _log(status_line(provider, public_url, payload.get("status"), idle_stop))
     except Exception as e:  # noqa: BLE001
         _log(f"\n*** REGISTRATION FAILED: {e}")
         _log("*** Check VOICEFORGE_APP_URL and REGISTRATION_TOKEN in Cell 0.")
@@ -273,12 +365,17 @@ def main() -> None:
             tunnel, public_url = _open_tunnel()
             _log(f"      tunnel: {public_url}")
         try:
-            result = _register(app_url, token, with_status(registration_payload(provider, public_url, gpu_name(), models, VERSION)))
+            payload = with_status(registration_payload(provider, public_url, gpu_name(), models, VERSION))
+            result = _register(app_url, token, payload)
             # Carries the Admin -> Backends switches: turning AI video on
             # later starts its install within one heartbeat.
             apply_app_features(result.get("features"))
+            idle_stop = _minutes(result.get("idle_stop_minutes"))
+            _log(status_line(provider, public_url, payload.get("status"), idle_stop))
+            if should_stop(payload.get("status"), idle_stop):
+                _stop_idle(app_url, token, payload, idle_stop, tunnel)
         except Exception as e:  # noqa: BLE001
-            _log(f"heartbeat failed: {e}")
+            _log(status_line(provider, public_url, None, idle_stop, ok=False, error=str(e)))
 
 
 if __name__ == "__main__":
