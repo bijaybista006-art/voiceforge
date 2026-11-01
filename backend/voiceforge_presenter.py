@@ -33,6 +33,7 @@ X-Backend-Secret header.
 from __future__ import annotations
 
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -48,7 +49,7 @@ from typing import Any, Callable, Dict, List, Optional
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import FileResponse
 
-PRESENTER_VERSION = "1.4.0"
+PRESENTER_VERSION = "1.5.0"
 
 # Pinned so a change upstream cannot alter results between two sessions. The
 # Modal image pins the same commit.
@@ -83,8 +84,8 @@ DOWNLOAD_TIMEOUT = 120
 # A presenter clip is an intro or an outro, not a narration. The cap keeps a
 # mistaken request from holding a GPU for an hour.
 MAX_AUDIO_SECONDS = float(os.environ.get("VOICEFORGE_PRESENTER_MAX_SECONDS", "90"))
-# Quality defaults (40 steps, DeepCache off) take roughly 3x the time the old
-# speed defaults did, so a long line needs far more than the old 40 minutes.
+# A safety cap, not an estimate. On a T4 at the defaults a 12 s line takes
+# tens of minutes; anything still running after this is treated as stuck.
 ENGINE_TIMEOUT = 60 * 100
 # DeepCache skips part of the U-Net on alternate steps: about 2x faster, with
 # a visible loss around the mouth. Off by default since Oct 2026 (lip sync
@@ -196,9 +197,10 @@ _BEFORE_ENGINE: Optional[Callable[[], None]] = None
 # pure helpers (unit-tested — no torch, no GPU)
 # ---------------------------------------------------------------------------
 
-def clamp_steps(value: Any, default: int = 40) -> int:
+def clamp_steps(value: Any, default: int = 20) -> int:
     """Denoising steps. The engine's documented range is 20-50; more is
-    sharper and better synced, and slower. 40 since Oct 2026 (was 20)."""
+    slower. Back to 20 (Nov 2026): 40 doubled the time without fixing the
+    blurry mouth, which comes from the model's resolution, not its steps."""
     try:
         n = int(value)
     except (TypeError, ValueError):
@@ -206,10 +208,10 @@ def clamp_steps(value: Any, default: int = 40) -> int:
     return max(10, min(50, n))
 
 
-def clamp_guidance(value: Any, default: float = 2.0) -> float:
+def clamp_guidance(value: Any, default: float = 1.5) -> float:
     """Guidance scale. Documented range 1.0-3.0: higher follows the audio
-    more closely and starts to jitter. 2.0 since Oct 2026 (was 1.5): mouth
-    shapes were too soft to read."""
+    more closely but, per the engine's own docs, "may cause distortion or
+    jitter". Back to 1.5 (Nov 2026): 2.0 gave a jittery, random-looking mouth."""
     try:
         g = float(value)
     except (TypeError, ValueError):
@@ -297,6 +299,96 @@ def extension_of(url: str, fallback: str) -> str:
     tail = url.split("?")[0].rsplit("/", 1)[-1]
     ext = tail.rsplit(".", 1)[-1].lower() if "." in tail else ""
     return f".{ext}" if 1 <= len(ext) <= 5 and ext.isalnum() else fallback
+
+
+# LatentSync prints three progress bars (tqdm, on stderr, redrawn with \r):
+#   "Affine transforming N faces..."  then a bar over the frames
+#   "Doing inference...: 37%|...| 7/19"  one tick per 16-frame segment, and
+#   inside it "Sample frames: 16: 45%|...| 9/20"  one tick per denoising step
+#   "Restoring N faces..."  then a bar over the frames
+# EngineProgress turns that into one number for the job, between the 15 the
+# job is at when the engine starts and the 94 it reaches when it is done.
+_BAR = re.compile(r"(?:(?P<desc>[^\r\n|%]*?):\s*)?\d{1,3}%\|[^|\r\n]*\|\s*(?P<n>\d+)/(?P<total>\d+)")
+
+ENGINE_PROGRESS_START = 15
+ENGINE_PROGRESS_END = 94
+# Share of the engine's time each phase takes (measured shape, not exact).
+_PHASES = (("faces", 0.12), ("inference", 0.80), ("restore", 0.08))
+
+
+class EngineProgress:
+    """Feed it engine output as it arrives; read .percent (never goes down)."""
+
+    def __init__(self) -> None:
+        self.phase = ""
+        self.segment = (0, 0)  # (done, total) of "Doing inference..."
+        self.step = (0, 0)  # (done, total) of the denoising steps in a segment
+        self.frames = (0, 0)  # (done, total) of the faces / restore bars
+        self.percent = ENGINE_PROGRESS_START
+        self._buffer = ""
+
+    def feed(self, text: str) -> int:
+        self._buffer += text
+        # tqdm redraws with \r; a line is finished by either \r or \n.
+        parts = re.split(r"[\r\n]", self._buffer)
+        self._buffer = parts.pop()
+        for line in parts:
+            self._line(line)
+        return self.percent
+
+    def _line(self, line: str) -> None:
+        if "Affine transforming" in line:
+            self.phase, self.frames = "faces", (0, 0)
+            return
+        if "Restoring" in line and "faces" in line:
+            self.phase, self.frames = "restore", (0, 0)
+            return
+        m = _BAR.search(line)
+        if not m:
+            return
+        desc = (m.group("desc") or "").strip()
+        done, total = int(m.group("n")), int(m.group("total"))
+        if total <= 0:
+            return
+        if desc.startswith("Doing inference"):
+            self.phase, self.segment = "inference", (done, total)
+        elif desc.startswith("Sample frames") or desc == "Steps":
+            if self.phase == "inference":
+                self.step = (done, total)
+        elif self.phase in ("faces", "restore"):
+            self.frames = (done, total)
+        else:
+            return
+        self.percent = max(self.percent, self._estimate())
+
+    def _estimate(self) -> int:
+        before = 0.0
+        fraction = 0.0
+        for name, share in _PHASES:
+            if name == self.phase:
+                if name == "inference":
+                    done, total = self.segment
+                    sdone, stotal = self.step
+                    inner = (sdone / stotal) if stotal else 0.0
+                    part = min(1.0, (done + inner) / total) if total else 0.0
+                else:
+                    done, total = self.frames
+                    part = min(1.0, done / total) if total else 0.0
+                fraction = before + share * part
+                break
+            before += share
+        span = ENGINE_PROGRESS_END - ENGINE_PROGRESS_START
+        return min(ENGINE_PROGRESS_END - 1, ENGINE_PROGRESS_START + int(span * fraction))
+
+    def describe(self) -> str:
+        if self.phase == "faces":
+            return "finding the face in each frame"
+        if self.phase == "inference":
+            done, total = self.segment
+            return f"redrawing the mouth, part {min(done + 1, total)} of {total}" if total else "redrawing the mouth"
+        if self.phase == "restore":
+            return "putting the face back into each frame"
+        return "starting the engine"
 
 
 def tail_of(text: str, limit: int = 600) -> str:
@@ -723,7 +815,71 @@ def _keep_awake(job_id: str, self_url: str) -> None:
             pass
 
 
-def _run_engine(cmd: List[str]) -> subprocess.CompletedProcess:
+# How much engine output to keep for an error message. The useful part (a
+# traceback, a "CUDA out of memory") is always at the end.
+_OUTPUT_KEEP = 200_000
+
+
+def stream_engine(
+    cmd: List[str],
+    cwd: Optional[str],
+    env: Dict[str, str],
+    on_output: Optional[Callable[[str], None]] = None,
+    timeout: float = ENGINE_TIMEOUT,
+) -> subprocess.CompletedProcess:
+    """Run the engine and hand its output to on_output as it arrives.
+
+    The engine used to run with its output captured until it exited, so a
+    clip showed one number for half an hour and nobody could tell slow from
+    stuck. stdout and stderr are merged (tqdm draws on stderr); both
+    returned fields carry the merged tail, which is what
+    describe_engine_failure reads.
+    """
+    env = dict(env)
+    env["PYTHONUNBUFFERED"] = "1"  # prints arrive as they happen, not at exit
+    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    kept: List[str] = []
+    size = [0]
+
+    def read() -> None:
+        assert proc.stdout is not None
+        fd = proc.stdout.fileno()
+        while True:
+            try:
+                chunk = os.read(fd, 8192)
+            except OSError:
+                break
+            if not chunk:
+                break
+            text = chunk.decode("utf-8", errors="replace")
+            kept.append(text)
+            size[0] += len(text)
+            while size[0] > _OUTPUT_KEEP and len(kept) > 1:
+                size[0] -= len(kept.pop(0))
+            if on_output is not None:
+                try:
+                    on_output(text)
+                except Exception:  # noqa: BLE001 - reporting must never stop the engine
+                    pass
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        reader.join(timeout=10)
+        raise RuntimeError(
+            f"the lip-sync engine was still running after {int(timeout // 60)} minutes and was stopped. "
+            + tail_of("".join(kept), 300)
+        )
+    reader.join(timeout=30)
+    out = "".join(kept)
+    return subprocess.CompletedProcess(cmd, proc.returncode, stdout=out, stderr=out)
+
+
+def _run_engine(cmd: List[str], on_output: Optional[Callable[[str], None]] = None) -> subprocess.CompletedProcess:
     """Run the engine, alone on its GPU.
 
     When it shares the only GPU with the voice server it takes the voice
@@ -731,10 +887,7 @@ def _run_engine(cmd: List[str]) -> subprocess.CompletedProcess:
     through and pushes the card out of memory.
     """
     def go() -> subprocess.CompletedProcess:
-        return subprocess.run(
-            cmd, cwd=ENGINE_DIR, env=_engine_env(),
-            capture_output=True, text=True, timeout=ENGINE_TIMEOUT,
-        )
+        return stream_engine(cmd, ENGINE_DIR, _engine_env(), on_output)
 
     if _shares_gpu_with_voice():
         with _SHARED_GPU_LOCK:  # type: ignore[union-attr]
@@ -812,7 +965,28 @@ def _run_presenter(req: Dict[str, Any]) -> None:
             )
             t_engine = time.time()
             ram_before = _children_peak_mb()
-            proc = _run_engine(cmd)
+            meter = EngineProgress()
+            said = {"percent": ENGINE_PROGRESS_START, "phase": "", "lines": 0}
+
+            def on_output(text: str) -> None:
+                percent = meter.feed(text)
+                # The notebook log: what the engine says (not its progress
+                # bars, which redraw hundreds of times), plus our progress.
+                for line in re.split(r"[\r\n]", text):
+                    line = line.strip()
+                    if line and "%|" not in line and said["lines"] < 200:
+                        said["lines"] += 1
+                        print(f"[presenter] engine: {line[:300]}", flush=True)
+                if meter.phase != said["phase"] or percent >= said["percent"] + 3:
+                    said["phase"], said["percent"] = meter.phase, percent
+                    _set(job_id, progress=percent, detail=meter.describe())
+                    print(
+                        f"[presenter] {job_id[:8]} {percent}% · {meter.describe()} · "
+                        f"{round(time.time() - t_engine)}s",
+                        flush=True,
+                    )
+
+            proc = _run_engine(cmd, on_output)
             engine_seconds = round(time.time() - t_engine, 2)
             # The most RAM any child of this process has held. It only ever
             # rises, so it is the engine's own peak when that is a new high.

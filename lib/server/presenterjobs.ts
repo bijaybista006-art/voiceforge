@@ -35,8 +35,7 @@ const NARRATION_RECONCILE_AFTER_MS = 8_000;
 
 /**
  * A clip is seconds of video; if it has not reported in this long it is lost.
- * Raised from 45 to 120 min with the quality defaults (40 steps, no DeepCache,
- * ~3x slower): a long line on a T4 can now legitimately run past 45 minutes.
+ * 120 min: a long line on a free T4 can legitimately run past 45 minutes.
  * Matches the backend's ENGINE_TIMEOUT (100 min) plus narration and queueing.
  */
 export const PRESENTER_STALE_AFTER_MS = 120 * 60 * 1000;
