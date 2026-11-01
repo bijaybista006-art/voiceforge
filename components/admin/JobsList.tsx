@@ -68,6 +68,22 @@ function matches(f: StatusFilter, j: JobRow): boolean {
   return j.status === f;
 }
 
+type KindFilter = "all" | "tts" | "presenter" | "clip";
+
+const KIND_FILTERS: Array<{ id: KindFilter; label: string }> = [
+  { id: "all", label: "All types" },
+  { id: "tts", label: "Narration" },
+  { id: "presenter", label: "Presenter" },
+  { id: "clip", label: "AI video" },
+];
+
+function matchesKind(f: KindFilter, j: JobRow): boolean {
+  if (f === "all") return true;
+  const k = jobKind(j.kind);
+  // Old "video" renders were presenter-style video; group them with Presenter.
+  return f === "presenter" ? k === "presenter" || k === "video" : k === f;
+}
+
 const POLL_MS = 30_000;
 
 export function JobsList() {
@@ -75,6 +91,7 @@ export function JobsList() {
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>("all");
+  const [kind, setKind] = useState<KindFilter>("all");
 
   const load = useCallback(async () => {
     try {
@@ -120,13 +137,30 @@ export function JobsList() {
     };
   }, [load]);
 
+  // Each row's counts respect the other row's choice, so the numbers always
+  // match what clicking would show.
+  const kindCounts = useMemo(() => {
+    const c = { all: 0, tts: 0, presenter: 0, clip: 0 } as Record<KindFilter, number>;
+    for (const j of jobs ?? []) {
+      if (!matches(filter, j)) continue;
+      for (const f of KIND_FILTERS) if (matchesKind(f.id, j)) c[f.id] += 1;
+    }
+    return c;
+  }, [jobs, filter]);
+
   const counts = useMemo(() => {
     const c = { all: 0, active: 0, done: 0, error: 0 } as Record<StatusFilter, number>;
-    for (const j of jobs ?? []) for (const f of FILTERS) if (matches(f.id, j)) c[f.id] += 1;
+    for (const j of jobs ?? []) {
+      if (!matchesKind(kind, j)) continue;
+      for (const f of FILTERS) if (matches(f.id, j)) c[f.id] += 1;
+    }
     return c;
-  }, [jobs]);
+  }, [jobs, kind]);
 
-  const shown = useMemo(() => (jobs ?? []).filter((j) => matches(filter, j)), [jobs, filter]);
+  const shown = useMemo(
+    () => (jobs ?? []).filter((j) => matches(filter, j) && matchesKind(kind, j)),
+    [jobs, filter, kind]
+  );
 
   async function remove(job: JobRow) {
     const ok = await confirmAction({
@@ -169,8 +203,32 @@ export function JobsList() {
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="Job type">
+        {KIND_FILTERS.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            role="tab"
+            aria-selected={kind === f.id}
+            onClick={() => setKind(f.id)}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12.5px] font-medium transition-colors ${
+              kind === f.id
+                ? f.id === "tts"
+                  ? "border-audio bg-audioSoft text-audio"
+                  : f.id === "all"
+                    ? "border-accent-600 bg-accent-50 text-accent-700"
+                    : "border-video bg-videoSoft text-video"
+                : "border-line bg-surface text-muted hover:border-lineStrong hover:text-ink"
+            }`}
+          >
+            {f.label}
+            <span className="font-mono text-[11px] opacity-70">{kindCounts[f.id]}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Filter jobs">
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Job status">
           {FILTERS.map((f) => (
             <button
               key={f.id}
