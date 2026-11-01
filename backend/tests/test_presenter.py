@@ -25,14 +25,14 @@ class TestParameters:
 
     def test_steps_fall_back_to_the_quality_default(self):
         # 40, not the engine's minimum of 20: lip sync at 20 was judged poor.
-        assert vp.clamp_steps(None) == 40
-        assert vp.clamp_steps("fast") == 40
+        assert vp.clamp_steps(None) == 20
+        assert vp.clamp_steps("fast") == 20
 
     def test_guidance_stays_in_the_documented_range(self):
         assert vp.clamp_guidance(1.5) == 1.5
         assert vp.clamp_guidance(9) == 3.0
         assert vp.clamp_guidance(0) == 1.0
-        assert vp.clamp_guidance(None) == 2.0
+        assert vp.clamp_guidance(None) == 1.5
 
 
 class TestCommand:

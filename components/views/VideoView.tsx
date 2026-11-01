@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LANGUAGES } from "@/lib/config";
 import { usePresenterStatus } from "@/lib/presenterClient";
+import { LIPSYNC_START, lipSyncMinutesLeft, lipSyncStep, type ProgressMark } from "@/lib/presenterProgress";
 import { useApp } from "@/lib/store";
 import { toast } from "@/lib/toast";
 import type { PresenterKind, PresenterView } from "@/lib/types";
@@ -24,6 +25,7 @@ interface Clip {
   jobId: string;
   status: "queued" | "running" | "done" | "error";
   stage: string | null;
+  progress?: number | null;
   backend: string | null;
   videoUrl: string | null;
   duration: number | null;
@@ -42,7 +44,7 @@ const STAGES: Array<{ key: string; label: string; hint: string }> = [
   {
     key: "lip-syncing",
     label: "Lip-syncing",
-    hint: "Redrawing the presenter's mouth to match. This is the slow part — a few minutes.",
+    hint: "Redrawing the presenter's mouth to match. This is the slow part: on a free GPU a short line often takes 10–30 minutes.",
   },
 ];
 
@@ -359,7 +361,7 @@ export function VideoView() {
               <p className="min-w-0 flex-1 text-[12.5px] text-muted">
                 {active
                   ? "One clip at a time. You can leave this page; it carries on and will be here when you come back."
-                  : (blocker ?? "Narrates your text, then lip-syncs it. Expect a few minutes.")}
+                  : (blocker ?? "Narrates your text, then lip-syncs it. On a free GPU expect 10–30 minutes for a short line.")}
               </p>
             </div>
           </div>
@@ -500,6 +502,18 @@ function PresenterChoice({
 
 function Progress({ clip, now }: { clip: Clip; now: number }) {
   const at = stageIndex(clip);
+  // The first progress seen during lip-sync, to estimate the time left from
+  // how fast it has moved since. Kept per clip; a reload starts over.
+  const first = useRef<{ jobId: string; mark: ProgressMark } | null>(null);
+  const progress = typeof clip.progress === "number" ? clip.progress : null;
+  const lipSyncing = at === 1 && clip.status === "running" && progress !== null && progress >= LIPSYNC_START;
+  if (lipSyncing && (first.current?.jobId !== clip.jobId || progress < first.current.mark.progress)) {
+    first.current = { jobId: clip.jobId, mark: { at: now, progress } };
+  }
+  const minutesLeft =
+    lipSyncing && first.current?.jobId === clip.jobId
+      ? lipSyncMinutesLeft(first.current.mark, { at: now, progress })
+      : null;
   const elapsed = Math.max(0, Math.round((now - clip.createdAt) / 1000));
   const mm = Math.floor(elapsed / 60);
   const ss = String(elapsed % 60).padStart(2, "0");
@@ -530,6 +544,32 @@ function Progress({ clip, now }: { clip: Clip; now: number }) {
                 </p>
                 {state === "now" ? (
                   <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted">{s.hint}</p>
+                ) : null}
+                {state === "now" && i === 1 && lipSyncing ? (
+                  <div className="mt-2.5" data-testid="lipsync-progress">
+                    <div
+                      className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-surface3"
+                      role="progressbar"
+                      aria-label="Lip-sync progress"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(progress ?? 0)}
+                    >
+                      <div
+                        className="h-full rounded-full bg-video transition-[width] duration-700"
+                        style={{ width: `${Math.round(progress ?? 0)}%` }}
+                      />
+                    </div>
+                    <p className="mt-1.5 text-[12px] text-muted">
+                      {Math.round(progress ?? 0)}% · {lipSyncStep(progress)}
+                      {minutesLeft !== null ? (
+                        <span className="font-medium text-ink" data-testid="lipsync-eta">
+                          {" "}
+                          · about {minutesLeft} min left
+                        </span>
+                      ) : null}
+                    </p>
+                  </div>
                 ) : null}
               </div>
             </li>

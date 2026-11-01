@@ -102,3 +102,32 @@ test("My Library reads the job history and offers downloads", async ({ page }) =
   await page.getByRole("tab", { name: "Narration" }).click();
   await expect(page.getByRole("list", { name: "Your files" }).getByRole("listitem")).toHaveCount(2);
 });
+
+test("Presenter Video shows real lip-sync progress while it runs", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("vf:presenter-clip", "e2e-presenter-9"));
+  await mockApi(page, (c) =>
+    c.path === "/api/admin/presenter-clips/e2e-presenter-9"
+      ? {
+          json: {
+            jobId: "e2e-presenter-9",
+            status: "running",
+            stage: "lip-syncing",
+            progress: 52,
+            backend: "kaggle",
+            videoUrl: null,
+            duration: null,
+            genSeconds: null,
+            error: null,
+            diagnostics: null,
+            createdAt: Date.now() - 600_000,
+          },
+        }
+      : undefined
+  );
+  await page.goto("/studio/presenter", { waitUntil: "networkidle" });
+  const box = page.getByTestId("lipsync-progress");
+  await expect(box).toBeVisible();
+  await expect(box.getByRole("progressbar", { name: "Lip-sync progress" })).toHaveAttribute("aria-valuenow", "52");
+  await expect(box).toContainText("52% · Redrawing the mouth");
+  await expect(page.getByText(/10–30 minutes/).first()).toBeVisible();
+});
