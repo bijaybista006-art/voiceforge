@@ -164,6 +164,10 @@ os.makedirs(JOBS_DIR, exist_ok=True)
 MODELS: Dict[str, Any] = {}
 VOICES: Dict[str, Dict[str, str]] = {}
 _GPU_LOCK = threading.Lock()  # one generation at a time: a single GPU
+# The presenter and AI video engines take turns through this one: on Kaggle
+# T4 x2 both run on the second GPU, and loading both at once ran it out of
+# memory. Lock order everywhere: an engine's own lock, this, then _GPU_LOCK.
+_ENGINE_LOCK = threading.Lock()
 _LOAD_LOCK = threading.Lock()  # one model load at a time; see engine_available
 _BUSY = False
 
@@ -1928,6 +1932,61 @@ WAN_FILES = ("__init__.py", "settings.py", "engine.py", "install.py", "service.p
 _WAN_SERVICE = None
 
 
+def system_report(path: str = "/") -> Dict[str, Any]:
+    """Free disk and GPU memory, for Admin -> Backends. Never raises."""
+    out: Dict[str, Any] = {}
+    try:
+        u = shutil.disk_usage(path)
+        out["disk_free_gb"] = round(u.free / 1e9, 1)
+        out["disk_total_gb"] = round(u.total / 1e9, 1)
+    except OSError:
+        pass
+    try:
+        import subprocess
+
+        smi = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.used,memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=10,
+        )
+        gpus = []
+        for line in smi.stdout.strip().splitlines():
+            parts = [p.strip() for p in line.split(",")]
+            if len(parts) == 3:
+                gpus.append({"name": parts[0][:60], "used_mb": int(float(parts[1])), "total_mb": int(float(parts[2]))})
+        if gpus:
+            out["gpus"] = gpus[:4]
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def backend_status() -> Dict[str, Any]:
+    """What a notebook tells the app on every heartbeat, beyond "I am alive".
+
+    The app used to learn whether AI video was ready only by asking /wan/health
+    when someone pressed Generate — at most every 90 s, with 12 s to answer
+    through the tunnel. A notebook that had just finished installing was
+    skipped and the clip went to Modal (paid). Now the answer arrives with
+    each heartbeat, so the app always knows: off, installing (which step),
+    failed (why), or ready.
+    """
+    status: Dict[str, Any] = {"system": system_report()}
+    if os.environ.get("VOICEFORGE_WAN", "0") != "1":
+        status["wan"] = {"state": "off", "capabilities": []}
+    elif _WAN_SERVICE is not None:
+        try:
+            report = _WAN_SERVICE.health_report()
+            status["wan"] = {
+                "state": "ready" if report.get("capabilities") else (report.get("install") or {}).get("state", "idle"),
+                "capabilities": report.get("capabilities") or [],
+                "install": report.get("install"),
+                "limits": report.get("limits"),
+            }
+        except Exception as e:  # noqa: BLE001
+            status["wan"] = {"state": "failed", "capabilities": [], "install": {"state": "failed", "error": str(e)[:300]}}
+    return status
+
+
 def apply_app_features(features: Optional[dict]) -> str:
     """Act on what the app says this backend may do.
 
@@ -2024,6 +2083,7 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
                     # On a single GPU a clip and a narration must not overlap.
                     shared_lock=_GPU_LOCK,
                     before_engine=lambda: torch.cuda.empty_cache() if torch.cuda.is_available() else None,
+                    engine_lock=_ENGINE_LOCK,
                 ),
                 prefix="/presenter",
             )
@@ -2060,6 +2120,7 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
                 presenter.configure(
                     shared_lock=_GPU_LOCK,
                     before_engine=lambda: torch.cuda.empty_cache() if torch.cuda.is_available() else None,
+                    engine_lock=_ENGINE_LOCK,
                 )
                 presenter.start_install_in_background()
                 return {"ok": True, "version": presenter.PRESENTER_VERSION, "bytes": len(data)}
@@ -2081,6 +2142,7 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
                     # On a single GPU a clip and a narration must not overlap.
                     shared_lock=_GPU_LOCK,
                     before_engine=lambda: torch.cuda.empty_cache() if torch.cuda.is_available() else None,
+                    engine_lock=_ENGINE_LOCK,
                 ),
                 prefix="/wan",
             )

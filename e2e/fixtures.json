@@ -31,7 +31,19 @@
           "text-to-video"
         ],
         "clipsEnabled": true,
-        "voiceEnabled": true
+        "voiceEnabled": true,
+        "system": {
+          "at": 1761900000000,
+          "diskFreeGb": 46.3,
+          "diskTotalGb": 112.6,
+          "gpus": [
+            {
+              "name": "Tesla T4",
+              "usedMb": 3180,
+              "totalMb": 15360
+            }
+          ]
+        }
       },
       {
         "provider": "modal",

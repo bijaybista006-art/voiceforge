@@ -117,6 +117,8 @@ export interface Job {
     settings?: Record<string, unknown>;
     restarts?: number;
     failedOn?: string[];
+    /** Why the free GPUs did not make it: "Kaggle: still installing AI video (…)". */
+    skipped?: string[];
   };
   /** 0-100 while rendering, so a long job isn't a black box. */
   progress?: number;

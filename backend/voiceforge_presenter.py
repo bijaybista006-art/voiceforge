@@ -32,6 +32,7 @@ X-Backend-Secret header.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import os
@@ -191,6 +192,10 @@ _GPU_LOCK = threading.Lock()  # one clip at a time
 # several GB and the engine needs eight more.
 _SHARED_GPU_LOCK: Optional[Any] = None
 _BEFORE_ENGINE: Optional[Callable[[], None]] = None
+# Shared with the AI video service in the same notebook. On a two-GPU Kaggle
+# session both engines run on the second card; this makes them take turns
+# instead of both loading at once and running out of memory.
+_ENGINE_LOCK: Optional[Any] = None
 
 
 # ---------------------------------------------------------------------------
@@ -889,15 +894,18 @@ def _run_engine(cmd: List[str], on_output: Optional[Callable[[str], None]] = Non
     def go() -> subprocess.CompletedProcess:
         return stream_engine(cmd, ENGINE_DIR, _engine_env(), on_output)
 
-    if _shares_gpu_with_voice():
-        with _SHARED_GPU_LOCK:  # type: ignore[union-attr]
-            if _BEFORE_ENGINE:
-                try:
-                    _BEFORE_ENGINE()
-                except Exception:  # noqa: BLE001
-                    pass
-            return go()
-    return go()
+    # Lock order everywhere (here and in the AI video service): the engine
+    # lock first, then the voice server's lock. Never the other way round.
+    with (_ENGINE_LOCK or contextlib.nullcontext()):
+        if _shares_gpu_with_voice():
+            with _SHARED_GPU_LOCK:  # type: ignore[union-attr]
+                if _BEFORE_ENGINE:
+                    try:
+                        _BEFORE_ENGINE()
+                    except Exception:  # noqa: BLE001
+                        pass
+                return go()
+        return go()
 
 
 def _run_presenter(req: Dict[str, Any]) -> None:
@@ -1109,12 +1117,15 @@ def health_report(provider: str) -> Dict[str, Any]:
 
 
 def configure(
-    shared_lock: Optional[Any] = None, before_engine: Optional[Callable[[], None]] = None
+    shared_lock: Optional[Any] = None,
+    before_engine: Optional[Callable[[], None]] = None,
+    engine_lock: Optional[Any] = None,
 ) -> None:
     """Tell this service what it shares a GPU with. Called again after a reload."""
-    global _SHARED_GPU_LOCK, _BEFORE_ENGINE
+    global _SHARED_GPU_LOCK, _BEFORE_ENGINE, _ENGINE_LOCK
     _SHARED_GPU_LOCK = shared_lock
     _BEFORE_ENGINE = before_engine
+    _ENGINE_LOCK = engine_lock
 
 
 def create_presenter_router(
@@ -1122,16 +1133,15 @@ def create_presenter_router(
     provider: str = "custom",
     shared_lock: Optional[Any] = None,
     before_engine: Optional[Callable[[], None]] = None,
+    engine_lock: Optional[Any] = None,
 ) -> APIRouter:
     """Routes, including /health. Mount at the root (Modal) or under a prefix
     (a notebook, where the voice server already owns /render and /health).
 
     `shared_lock` is the voice server's GPU lock when the two share a process;
-    see _run_engine.
+    `engine_lock` is shared with the AI video service; see _run_engine.
     """
-    global _SHARED_GPU_LOCK, _BEFORE_ENGINE
-    _SHARED_GPU_LOCK = shared_lock
-    _BEFORE_ENGINE = before_engine
+    configure(shared_lock, before_engine, engine_lock)
 
     router = APIRouter()
 

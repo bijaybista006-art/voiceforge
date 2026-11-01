@@ -144,3 +144,10 @@ test("Open notebook links to the saved notebook", async ({ page }) => {
   await expect(link).toHaveAttribute("href", /colab\.research\.google\.com\/drive\/1AbC/);
   await expect(link).toHaveAttribute("target", "_blank");
 });
+
+test("a notebook card shows its free disk and GPU memory", async ({ page }) => {
+  await open(page);
+  const card = page.getByTestId("backend-colab");
+  await expect(card.getByTestId("disk-free")).toContainText("46 GB free of 113");
+  await expect(card.getByTestId("gpu-memory")).toContainText("3.1 / 15 GB");
+});

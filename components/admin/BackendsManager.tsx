@@ -603,11 +603,41 @@ function BackendCard({
               <IconClock className="h-3 w-3" />
               <span>{lastSeen(b)}</span>
             </div>
+            {b.system?.diskFreeGb !== undefined ? (
+              <div className="flex gap-1.5" data-testid="disk-free">
+                <dt className="text-faint">Disk</dt>
+                <dd className={b.system.diskFreeGb < 15 ? "font-medium text-danger" : "text-ink"}>
+                  {Math.round(b.system.diskFreeGb)} GB free
+                  {b.system.diskTotalGb ? ` of ${Math.round(b.system.diskTotalGb)}` : ""}
+                </dd>
+              </div>
+            ) : null}
+            {b.system?.gpus?.length ? (
+              <div className="flex gap-1.5" data-testid="gpu-memory">
+                <dt className="flex items-center gap-1 text-faint">
+                  GPU memory
+                  <Tooltip text="In use right now, per GPU, from the notebook's last heartbeat. The voice model keeps about 3 GB loaded." />
+                </dt>
+                <dd className="text-ink [font-variant-numeric:tabular-nums]">
+                  {b.system.gpus
+                    .map((g) => `${(g.usedMb / 1024).toFixed(1)} / ${(g.totalMb / 1024).toFixed(0)} GB`)
+                    .join(" · ")}
+                </dd>
+              </div>
+            ) : null}
           </dl>
           {lastTest ? (
             <p className={`mt-2 text-[12.5px] ${lastTest.ok ? "text-ready" : "text-danger"}`}>
               {lastTest.ok ? "Test passed. " : "Test failed. "}
               <span className="text-muted">{lastTest.text}</span>
+            </p>
+          ) : null}
+          {b.wanNote && b.clipsEnabled !== false && b.enabled ? (
+            <p
+              data-testid="wan-note"
+              className={`mt-2 text-[12.5px] ${/still installing/i.test(b.wanNote) ? "text-live" : "text-danger"}`}
+            >
+              AI video: {b.wanNote.replace(/^it is /, "")}
             </p>
           ) : null}
           {!lastTest && b.lastReachError ? (
