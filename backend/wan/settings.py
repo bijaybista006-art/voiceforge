@@ -52,7 +52,11 @@ DEFAULT_NEGATIVE_PROMPT = (
 #   full      Modal L40S (48 GB): bf16, whole pipeline on the GPU.
 #   low_vram  Colab / Kaggle T4 (16 GB, no bf16, 13-29 GB RAM, shares the GPU
 #             with the voice model): 4-bit NF4 transformer + text encoder,
-#             fp16 compute, tiled VAE decode. ~7 GB of VRAM instead of ~30.
+#             fp16 compute, tiled VAE decode, and model CPU offload: each part
+#             (text encoder, transformer, VAE) is on the GPU only while it
+#             runs. Without the offload all three sat on the GPU together and
+#             a 480p clip peaked at 11.3 GB, which with the voice model's
+#             3.1 GB ran a 14.6 GB T4 out of memory (Nov 2026).
 PROFILES: Dict[str, Dict[str, Any]] = {
     "full": {
         "dtype": "bfloat16",
@@ -64,7 +68,7 @@ PROFILES: Dict[str, Dict[str, Any]] = {
     "low_vram": {
         "dtype": "float16",
         "quantize": True,
-        "cpu_offload": False,
+        "cpu_offload": True,
         "vae_tiling": True,
         "default_quality": "480p",
     },

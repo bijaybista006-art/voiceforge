@@ -57,6 +57,7 @@ export async function GET() {
       stage: j.stage,
       items: j.items,
       error: j.error,
+      skipped: j.clip?.skipped,
     })),
     storageConnected: isRedisConfigured(),
   });

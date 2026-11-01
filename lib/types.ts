@@ -200,6 +200,15 @@ export interface RegisteredBackend extends BackendRegistration {
   voiceEnabled?: boolean;
   /** AI video clips (Wan) switch. Also tells a notebook whether to install it. */
   clipsEnabled?: boolean;
+  /** Disk and GPU memory, from a notebook's last heartbeat. */
+  system?: BackendSystem;
+}
+
+export interface BackendSystem {
+  at: number;
+  diskFreeGb?: number;
+  diskTotalGb?: number;
+  gpus?: Array<{ name: string; usedMb: number; totalMb: number }>;
 }
 
 /** Registry row plus the status computed at read time. */

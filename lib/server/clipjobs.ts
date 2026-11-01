@@ -17,7 +17,8 @@
  * Standard order, free notebooks first, exactly as for voice and presenters.
  */
 
-import type { BackendProvider, BackendView } from "@/lib/types";
+import { PROVIDER_LABEL } from "@/lib/routingView";
+import type { BackendProvider, BackendView, RegisteredBackend } from "@/lib/types";
 import {
   backendFeatures,
   backendHeaders,
@@ -254,9 +255,109 @@ export function pickClipBackends(backends: BackendView[]): BackendView[] {
   );
 }
 
+/** Free GPUs (your own notebooks and machines). Only Modal is billed per use. */
+export const FREE_CLIP_PROVIDERS: BackendProvider[] = ["colab", "kaggle", "custom"];
+
+export interface ClipSkip {
+  provider: BackendProvider;
+  /** Plain words: "offline", "still installing AI video (downloading the weights)". */
+  reason: string;
+  /** True when it is on its way (installing, or not reported yet): worth waiting for. */
+  coming: boolean;
+}
+
+/**
+ * Why each free GPU cannot take a clip right now. Pure. Leaves out `except`
+ * (the backend that will take it) and anything after it in the order, since
+ * those were never in line. A backend that is not registered at all is not
+ * listed: there is nothing to explain.
+ */
+export function clipSkipReasons(backends: BackendView[], except?: BackendProvider): ClipSkip[] {
+  const out: ClipSkip[] = [];
+  for (const b of backends) {
+    if (b.provider === except) break;
+    if (!FREE_CLIP_PROVIDERS.includes(b.provider)) continue;
+    if (pickClipBackends([b]).length) continue;
+    if (!b.enabled) out.push({ provider: b.provider, reason: "turned off in Admin → Backends", coming: false });
+    else if (!isUsableHealth(b.health)) out.push({ provider: b.provider, reason: "offline", coming: false });
+    else if (!backendFeatures(b).clips)
+      out.push({ provider: b.provider, reason: "AI video is switched off for it", coming: false });
+    else if (b.wanNote) {
+      const installing = /still installing/i.test(b.wanNote);
+      out.push({
+        provider: b.provider,
+        reason: b.wanNote.replace(/^it is /, "").replace(/^AI video is not available: /, "AI video failed: "),
+        coming: installing,
+      });
+    } else out.push({ provider: b.provider, reason: "has not reported AI video as ready yet", coming: true });
+  }
+  return out;
+}
+
+/** "Kaggle: offline" — one line per skipped backend, for a job record. */
+export function describeSkips(skips: ClipSkip[]): string[] {
+  return skips.map((s) => `${PROVIDER_LABEL[s.provider]}: ${s.reason}`);
+}
+
+/**
+ * What a notebook's heartbeat says about AI video, disk and GPU, as the
+ * fields to store on its row. Pure. Newer notebooks send `status` with every
+ * heartbeat (backend_status in voiceforge_server.py); before that the app
+ * only learned AI video was ready by asking /wan/health when someone pressed
+ * Generate, and a notebook that had just finished installing was skipped.
+ */
+export interface HeartbeatStatus {
+  wan?: {
+    state?: string;
+    capabilities?: string[];
+    install?: { state?: string; stage?: string; error?: string } | null;
+    limits?: Record<string, unknown> | null;
+  };
+  system?: {
+    disk_free_gb?: number;
+    disk_total_gb?: number;
+    gpus?: Array<{ name: string; used_mb: number; total_mb: number }>;
+  };
+}
+
+export function heartbeatFields(url: string, status: HeartbeatStatus | undefined, now = Date.now()): Partial<RegisteredBackend> {
+  if (!status) return {};
+  const out: Partial<RegisteredBackend> = {};
+  const base = url.replace(/\/+$/, "");
+  if (status.wan) {
+    const caps = (status.wan.capabilities ?? []).filter((c) => c === CLIP_CAPABILITY);
+    const off = status.wan.state === "off";
+    Object.assign(out, {
+      wanCapabilities: caps,
+      wanProbedAt: now,
+      wanProbedUrl: `${base}/wan`,
+      wanNote: off
+        ? "AI video is off in this notebook (ENABLE_AI_VIDEO = False in Cell 0)"
+        : wanInstallNote(status.wan.install ?? undefined),
+      ...(off ? {} : { wanUrl: `${base}/wan` }),
+      ...(status.wan.limits ? { wanLimits: status.wan.limits } : {}),
+    });
+  }
+  if (status.system) {
+    out.system = {
+      at: now,
+      ...(typeof status.system.disk_free_gb === "number" ? { diskFreeGb: status.system.disk_free_gb } : {}),
+      ...(typeof status.system.disk_total_gb === "number" ? { diskTotalGb: status.system.disk_total_gb } : {}),
+      ...(status.system.gpus?.length
+        ? { gpus: status.system.gpus.slice(0, 4).map((g) => ({ name: g.name, usedMb: g.used_mb, totalMb: g.total_mb })) }
+        : {}),
+    };
+  }
+  return out;
+}
+
 export interface ClipReadiness {
   ready: boolean;
   provider?: string;
+  /** True when the clip would run on a paid backend (Modal). */
+  paid?: boolean;
+  /** Free GPUs that cannot take it right now, and why. */
+  skipped?: ClipSkip[];
   /** Why not, phrased as the next thing to do. */
   reason?: string;
   /** What the backend that would take the clip advertised. */
@@ -274,9 +375,12 @@ export function clipReadiness(backends: BackendView[]): ClipReadiness {
     .filter((b) => b.wanNote && isUsableHealth(b.health) && backendFeatures(b).clips && !usable.includes(b))
     .map((b) => `${b.provider}: ${b.wanNote}`);
   if (usable.length) {
+    const skipped = clipSkipReasons(backends, usable[0].provider);
     return {
       ready: true,
       provider: usable[0].provider,
+      paid: !FREE_CLIP_PROVIDERS.includes(usable[0].provider),
+      ...(skipped.length ? { skipped } : {}),
       ...(usable[0].wanLimits ? { limits: usable[0].wanLimits } : {}),
       ...(notes.length ? { also: notes.join("; ") } : {}),
     };
@@ -300,14 +404,19 @@ export function clipReadiness(backends: BackendView[]): ClipReadiness {
 }
 
 async function requireTargets(): Promise<BackendView[]> {
+  return (await requireTargetsWithAll()).targets;
+}
+
+async function requireTargetsWithAll(): Promise<{ targets: BackendView[]; all: BackendView[] }> {
   // Cheap unless a backend is due to be asked; without it a notebook that
   // just finished installing would only be noticed by pressing Test.
   await discoverMissingWan(12_000);
-  const targets = pickClipBackends(await listBackends());
+  const all = await listBackends();
+  const targets = pickClipBackends(all);
   if (!targets.length) {
-    throw new JobError(clipReadiness(await listBackends()).reason ?? "No backend can make AI video.", 503, "no_clip_backend");
+    throw new JobError(clipReadiness(all).reason ?? "No backend can make AI video.", 503, "no_clip_backend");
   }
-  return targets;
+  return { targets, all };
 }
 
 // --- jobs ------------------------------------------------------------------
@@ -340,7 +449,7 @@ async function newClipJob(first: BackendView, input: ClipInput, request: Record<
 }
 
 /** Hand a clip to the first backend that accepts it. */
-async function dispatchClip(job: Job, targets: BackendView[]): Promise<Job> {
+async function dispatchClip(job: Job, targets: BackendView[], all?: BackendView[]): Promise<Job> {
   const plan = job.clip!;
   // A clip sent again (lost, or failed on one backend) keeps the seed the
   // first backend chose, so the retry makes the same clip.
@@ -375,6 +484,13 @@ async function dispatchClip(job: Job, targets: BackendView[]): Promise<Job> {
         throw new Error(`backend returned ${res.status} ${detail.slice(0, 200)}`);
       }
       const accepted = (await res.json().catch(() => ({}))) as { settings?: Record<string, unknown> };
+      // Why the free GPUs before this one did not get it, for the studio and
+      // Admin -> Jobs. Earlier notes (a failure on another backend) are kept.
+      const skipped = [
+        ...(plan.skipped ?? []).filter((x) => !x.startsWith(`${PROVIDER_LABEL[t.provider]}:`)),
+        ...describeSkips(clipSkipReasons(all ?? [], t.provider)).filter((x) => !(plan.skipped ?? []).includes(x)),
+        ...failures,
+      ];
       return saveJob({
         ...job,
         backend: t.provider,
@@ -383,11 +499,17 @@ async function dispatchClip(job: Job, targets: BackendView[]): Promise<Job> {
         stage: "queued on the GPU",
         progress: 0,
         error: undefined,
-        clip: { ...plan, ...(accepted.settings ? { settings: accepted.settings } : {}) },
+        clip: {
+          ...plan,
+          ...(accepted.settings ? { settings: accepted.settings } : {}),
+          ...(skipped.length ? { skipped } : {}),
+        },
       });
     } catch (e) {
       if (e instanceof JobError) throw e;
-      failures.push(`${t.provider}: ${e instanceof Error ? e.message : "could not reach the video backend"}`);
+      failures.push(
+        `${PROVIDER_LABEL[t.provider]}: did not accept it (${e instanceof Error ? e.message.slice(0, 160) : "could not reach the video backend"})`
+      );
     }
   }
   const failed = await saveJob({ ...job, status: "error", error: failures.join("; ") });
@@ -397,9 +519,9 @@ async function dispatchClip(job: Job, targets: BackendView[]): Promise<Job> {
 /** Start a clip. Throws JobError (400 / 503 / 502) when it cannot. */
 export async function createAndDispatchClip(input: ClipInput, appUrl: string): Promise<Job> {
   const request = clipRequestBody(input);
-  const targets = await requireTargets();
+  const { targets, all } = await requireTargetsWithAll();
   const job = await newClipJob(targets[0], input, request, appUrl);
-  return dispatchClip(job, targets);
+  return dispatchClip(job, targets, all);
 }
 
 export interface ClipResult {
@@ -479,13 +601,29 @@ async function moveToNextBackend(job: Job, why: string): Promise<Job | null> {
   if (!job.clip || !job.backend) return null;
   const failedOn = [...new Set([...(job.clip.failedOn ?? []), job.backend])];
   try {
-    const targets = (await requireTargets()).filter((t) => !failedOn.includes(t.provider));
+    const { targets: ready, all } = await requireTargetsWithAll();
+    const targets = ready.filter((t) => !failedOn.includes(t.provider));
     if (!targets.length) return null;
     console.warn(`[voiceforge] clip ${job.id} failed on ${job.backend} (${why.slice(0, 120)}); trying ${targets[0].provider}`);
-    return await dispatchClip({ ...job, clip: { ...job.clip, failedOn }, error: undefined }, targets);
+    const failedNote = `${PROVIDER_LABEL[job.backend as BackendProvider] ?? job.backend}: failed (${failNote(why)})`;
+    return await dispatchClip(
+      {
+        ...job,
+        clip: { ...job.clip, failedOn, skipped: [...(job.clip.skipped ?? []), failedNote] },
+        error: undefined,
+      },
+      targets,
+      all
+    );
   } catch {
     return null;
   }
+}
+
+/** A backend's failure in a few words: "ran out of GPU memory", or its message. */
+export function failNote(why: string): string {
+  if (/out of memory|GPU_OUT_OF_MEMORY/i.test(why)) return "ran out of GPU memory";
+  return why.replace(/\s+/g, " ").slice(0, 140);
 }
 
 /** Send a clip its backend lost (scaled down, redeployed) once more. */

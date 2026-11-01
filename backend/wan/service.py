@@ -59,6 +59,9 @@ _CONFIG: Dict[str, Any] = {
     "provider": "custom",
     "shared_lock": None,  # the voice server's GPU lock, when we share its GPU
     "before_engine": None,  # e.g. torch.cuda.empty_cache in the voice process
+    # Shared with the presenter engine in the same notebook, so the two never
+    # load onto the same (second Kaggle) GPU at once.
+    "engine_lock": None,
 }
 
 
@@ -66,8 +69,9 @@ def configure(
     provider: str,
     shared_lock: Optional[Any] = None,
     before_engine: Optional[Callable[[], None]] = None,
+    engine_lock: Optional[Any] = None,
 ) -> None:
-    _CONFIG.update(provider=provider, shared_lock=shared_lock, before_engine=before_engine)
+    _CONFIG.update(provider=provider, shared_lock=shared_lock, before_engine=before_engine, engine_lock=engine_lock)
 
 
 def _in_process() -> bool:
@@ -201,7 +205,10 @@ def _run_subprocess(job_id: str, settings: Dict[str, Any], out_path: str, work: 
             killer.cancel()
 
     if result.get("event") == "done" and proc.returncode == 0:
-        return {k: result.get(k) for k in ("load_seconds", "gen_seconds", "gpu")}
+        facts = {k: result.get(k) for k in ("load_seconds", "gen_seconds", "gpu", "peak_vram_gb")}
+        print(f"[wan] {job_id[:8]} done in {facts.get('gen_seconds')}s, peak GPU memory "
+              f"{facts.get('peak_vram_gb')} GB on {facts.get('gpu')}", flush=True)
+        return facts
     if result.get("error"):
         raise RuntimeError(result["error"])
     with open(log_path, encoding="utf-8", errors="replace") as f:
@@ -222,7 +229,8 @@ def _run_clip(req: Dict[str, Any]) -> None:
     try:
         _set(job_id, stage="waiting for the GPU")
         shared = _CONFIG["shared_lock"] if _shares_gpu_with_voice() else None
-        with _GPU_LOCK, (shared or contextlib.nullcontext()):
+        # Lock order everywhere: own lock, engine lock, then the voice lock.
+        with _GPU_LOCK, (_CONFIG["engine_lock"] or contextlib.nullcontext()), (shared or contextlib.nullcontext()):
             if shared is not None and _CONFIG["before_engine"]:
                 with contextlib.suppress(Exception):
                     _CONFIG["before_engine"]()
@@ -239,6 +247,7 @@ def _run_clip(req: Dict[str, Any]) -> None:
             path=out_path, work=work, bytes=os.path.getsize(out_path),
             duration=settings["duration"], gen_seconds=facts.get("gen_seconds"),
             load_seconds=facts.get("load_seconds"), gpu=facts.get("gpu") or _gpu_name(),
+            peak_vram_gb=facts.get("peak_vram_gb"),
         )
     except Exception as e:  # noqa: BLE001
         shutil.rmtree(work, ignore_errors=True)
@@ -269,6 +278,7 @@ def _send_callback(req: Dict[str, Any]) -> None:
             "gpu": job.get("gpu"),
             "load_seconds": job.get("load_seconds"),
             "oom": job.get("oom"),
+            "peak_vram_gb": job.get("peak_vram_gb"),
         },
     }
     # The gateway treats null as a wrong type, not "absent": leave empties out.
@@ -340,10 +350,11 @@ def create_wan_router(
     provider: str = "custom",
     shared_lock: Optional[Any] = None,
     before_engine: Optional[Callable[[], None]] = None,
+    engine_lock: Optional[Any] = None,
 ) -> APIRouter:
     """Routes, including /health. Mount at the root (Modal) or under /wan (a
     notebook, where the voice server already owns /render and /health)."""
-    configure(provider, shared_lock=shared_lock, before_engine=before_engine)
+    configure(provider, shared_lock=shared_lock, before_engine=before_engine, engine_lock=engine_lock)
     router = APIRouter()
 
     @router.get("/health")

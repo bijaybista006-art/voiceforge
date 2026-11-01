@@ -117,7 +117,7 @@ export async function listBackends(): Promise<BackendView[]> {
  */
 export async function registerBackend(
   reg: BackendRegistration,
-  opts: { selfRegistered?: boolean } = {}
+  opts: { selfRegistered?: boolean; extra?: Partial<RegisteredBackend> } = {}
 ): Promise<RegisteredBackend> {
   const existing = await kvGet<RegisteredBackend>(KEY(reg.provider));
   const now = Date.now();
@@ -168,6 +168,9 @@ export async function registerBackend(
     gpuSecondsMonth: existing?.gpuSecondsMonth ?? 0,
     jobsToday: existing?.jobsToday ?? 0,
     lastError: undefined,
+    // A heartbeat that carries status (AI video state, disk, GPU) overrides
+    // what was kept above: it is the newest word from this very address.
+    ...(opts.extra ?? {}),
   };
   await kvSet(KEY(reg.provider), row);
   return row;

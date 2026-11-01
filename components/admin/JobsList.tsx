@@ -51,6 +51,8 @@ interface JobRow {
   stage?: string;
   items?: JobItem[];
   error?: string;
+  /** AI video: why the free GPUs did not make it. */
+  skipped?: string[];
 }
 
 type StatusFilter = "all" | "active" | "done" | "error";
@@ -353,6 +355,12 @@ function JobCard({ job, busy, onDelete }: { job: JobRow; busy: boolean; onDelete
                 {Math.round(job.progress)}%{job.stage ? ` · ${job.stage}` : ""}
               </p>
             </div>
+          ) : null}
+
+          {job.skipped?.length ? (
+            <p className="mt-1.5 text-[12px] leading-relaxed text-muted" data-testid="job-skipped">
+              <span className="font-medium text-ink">Not on a free GPU:</span> {job.skipped.join("; ")}
+            </p>
           ) : null}
 
           {job.error ? (

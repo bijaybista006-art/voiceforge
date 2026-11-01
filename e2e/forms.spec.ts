@@ -131,3 +131,65 @@ test("Presenter Video shows real lip-sync progress while it runs", async ({ page
   await expect(box).toContainText("52% · Redrawing the mouth");
   await expect(page.getByText(/10–30 minutes/).first()).toBeVisible();
 });
+
+test("AI Video never uses the paid GPU silently while a free one is installing", async ({ page }) => {
+  const calls = await mockApi(page, (c) =>
+    c.method === "GET" && c.path === "/api/gateway/clips"
+      ? {
+          json: {
+            ready: true,
+            provider: "modal",
+            paid: true,
+            skipped: [
+              { provider: "colab", reason: "offline", coming: false },
+              { provider: "kaggle", reason: "still installing AI video (downloading the weights)", coming: true },
+            ],
+            limits: { default_quality: "720p", max_frames: 121, fps: 24 },
+          },
+        }
+      : undefined
+  );
+  await page.goto("/studio/ai-video", { waitUntil: "networkidle" });
+  const notice = page.getByTestId("paid-notice");
+  await expect(notice).toContainText("The next clip will run on Modal, which is paid.");
+  await expect(notice).toContainText("Kaggle: still installing AI video");
+  await expect(notice).toContainText("Google Colab: offline");
+
+  await page.getByRole("textbox", { name: "Scene description" }).fill("A calm lake at dawn");
+  await page.getByRole("button", { name: "Generate clip" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("Use Modal (paid) for this clip?");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  expect(writes(calls).filter((c) => c.path === "/api/gateway/clips")).toEqual([]);
+
+  await page.getByRole("button", { name: "Generate clip" }).click();
+  await page.getByTestId("confirm-accept").click();
+  await expect.poll(() => writes(calls).filter((c) => c.path === "/api/gateway/clips").length).toBe(1);
+});
+
+test("AI Video says where a clip ran and why", async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem("vf:ai-clip", JSON.stringify({ id: "e2e-clip-7", at: Date.now() - 60_000 }))
+  );
+  await mockApi(page, (c) =>
+    c.path === "/api/gateway/clips/e2e-clip-7"
+      ? {
+          json: {
+            job_id: "e2e-clip-7",
+            status: "running",
+            stage: "generating",
+            progress: 30,
+            backend: "modal",
+            video_url: null,
+            duration: null,
+            gen_seconds: null,
+            settings: null,
+            error: null,
+            skipped: ["Kaggle: failed (ran out of GPU memory)"],
+          },
+        }
+      : undefined
+  );
+  await page.goto("/studio/ai-video", { waitUntil: "networkidle" });
+  await expect(page.getByTestId("routed-note")).toContainText("Made on Modal because Kaggle: failed (ran out of GPU memory)");
+});

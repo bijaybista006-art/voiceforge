@@ -72,6 +72,20 @@ def registration_payload(provider: str, url: str, gpu: str, models: List[str], v
     }
 
 
+def with_status(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Add the server's status (AI video install state, disk, GPU memory).
+
+    Best-effort: a server file from before backend_status existed, or any
+    error, sends the plain registration, which the app has always accepted.
+    """
+    try:
+        from backend.voiceforge_server import backend_status
+
+        return {**payload, "status": backend_status()}
+    except Exception:  # noqa: BLE001
+        return payload
+
+
 def version_tuple(v: str) -> Tuple[int, ...]:
     return tuple(int(p) for p in re.findall(r"\d+", v or ""))
 
@@ -237,7 +251,7 @@ def main() -> None:
     _log("[4/4] registering with your app...")
     heartbeat = 150
     try:
-        result = _register(app_url, token, registration_payload(provider, public_url, gpu_name(), models, VERSION))
+        result = _register(app_url, token, with_status(registration_payload(provider, public_url, gpu_name(), models, VERSION)))
         heartbeat = int(result.get("heartbeat_seconds", heartbeat))
         _log("\n" + "=" * 62)
         _log("  REGISTERED - nothing to copy. Check Admin -> Backends.")
@@ -259,7 +273,7 @@ def main() -> None:
             tunnel, public_url = _open_tunnel()
             _log(f"      tunnel: {public_url}")
         try:
-            result = _register(app_url, token, registration_payload(provider, public_url, gpu_name(), models, VERSION))
+            result = _register(app_url, token, with_status(registration_payload(provider, public_url, gpu_name(), models, VERSION)))
             # Carries the Admin -> Backends switches: turning AI video on
             # later starts its install within one heartbeat.
             apply_app_features(result.get("features"))

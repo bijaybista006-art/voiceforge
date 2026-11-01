@@ -75,6 +75,9 @@ vi.mock("../server/blob", () => ({
 import {
   clipReadiness,
   clipRequestBody,
+  clipSkipReasons,
+  failNote,
+  heartbeatFields,
   completeClip,
   createAndDispatchClip,
   discoverWan,
@@ -334,5 +337,116 @@ describe("the job flow", () => {
       code: "no_clip_backend",
     });
     expect(jobs.size).toBe(0);
+  });
+});
+
+
+describe("free GPUs first, and never a silent paid clip", () => {
+  const installingKaggle = () => ({
+    ...kaggle(),
+    wanCapabilities: [],
+    wanNote: "it is still installing AI video (downloading the weights (~25 GB))",
+  });
+  const offlineColab = () => ({ ...kaggle(), provider: "colab", url: "https://c.trycloudflare.com", health: "offline" });
+
+  it("says why each free GPU cannot take the clip, in order, and stops at the one that will", () => {
+    const skips = clipSkipReasons([offlineColab(), installingKaggle(), modal()] as any, "modal");
+    expect(skips).toEqual([
+      { provider: "colab", reason: "offline", coming: false },
+      { provider: "kaggle", reason: "still installing AI video (downloading the weights (~25 GB))", coming: true },
+    ]);
+    expect(clipSkipReasons([kaggle(), modal()] as any, "kaggle")).toEqual([]);
+  });
+
+  it("names a failed install and a switched-off feature plainly", () => {
+    const failed = { ...kaggle(), wanCapabilities: [], wanNote: "AI video is not available: not enough disk space" };
+    const off = { ...kaggle(), provider: "colab", clipsEnabled: false };
+    expect(clipSkipReasons([off, failed] as any, "modal")).toEqual([
+      { provider: "colab", reason: "AI video is switched off for it", coming: false },
+      { provider: "kaggle", reason: "AI video failed: not enough disk space", coming: false },
+    ]);
+  });
+
+  it("readiness marks Modal as paid and lists what the free GPUs are doing", () => {
+    const r = clipReadiness([offlineColab(), installingKaggle(), modal()] as any);
+    expect(r).toMatchObject({ ready: true, provider: "modal", paid: true });
+    expect(r.skipped?.map((x) => x.provider)).toEqual(["colab", "kaggle"]);
+    expect(clipReadiness([kaggle(), modal()] as any)).toMatchObject({ ready: true, provider: "kaggle", paid: false });
+  });
+
+  it("a heartbeat makes a just-installed notebook a candidate at once", () => {
+    const fields = heartbeatFields("https://k.trycloudflare.com/", {
+      wan: { state: "ready", capabilities: ["text-to-video"], install: null, limits: { default_quality: "480p" } },
+      system: { disk_free_gb: 41.2, disk_total_gb: 73.1, gpus: [{ name: "Tesla T4", used_mb: 3100, total_mb: 15360 }] },
+    }, 1000);
+    expect(fields).toMatchObject({
+      wanUrl: "https://k.trycloudflare.com/wan",
+      wanCapabilities: ["text-to-video"],
+      wanProbedUrl: "https://k.trycloudflare.com/wan",
+      wanProbedAt: 1000,
+      wanNote: undefined,
+      wanLimits: { default_quality: "480p" },
+      system: { at: 1000, diskFreeGb: 41.2, diskTotalGb: 73.1, gpus: [{ name: "Tesla T4", usedMb: 3100, totalMb: 15360 }] },
+    });
+    // Already asked at this address and it said yes: no extra probe needed.
+    expect(shouldProbeWan({ url: "https://k.trycloudflare.com", selfRegistered: true, ...fields } as any)).toBe(false);
+  });
+
+  it("a heartbeat while installing, or with AI video off, says so and claims nothing", () => {
+    const installing = heartbeatFields("https://k.x", {
+      wan: { state: "installing", capabilities: [], install: { state: "installing", stage: "downloading the weights" } },
+    });
+    expect(installing.wanCapabilities).toEqual([]);
+    expect(installing.wanNote).toBe("it is still installing AI video (downloading the weights)");
+    const off = heartbeatFields("https://k.x", { wan: { state: "off", capabilities: [] } });
+    expect(off.wanNote).toMatch(/ENABLE_AI_VIDEO = False/);
+    expect(off.wanUrl).toBeUndefined();
+    expect(heartbeatFields("https://k.x", undefined)).toEqual({});
+  });
+
+  it("puts a failure in a few words", () => {
+    expect(failNote("CUDA out of memory. Tried to allocate 108.00 MiB")).toBe("ran out of GPU memory");
+    expect(failNote("GPU_OUT_OF_MEMORY: at 832x480")).toBe("ran out of GPU memory");
+    expect(failNote("weights   missing")).toBe("weights missing");
+  });
+});
+
+describe("a clip records why it did not run on a free GPU", () => {
+  let posts: string[] = [];
+  beforeEach(() => {
+    jobs.clear();
+    kv.clear();
+    posts = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith("/render") && init?.method === "POST") {
+          posts.push(u);
+          return new Response(JSON.stringify({ accepted: true, settings: { seed: 7 } }), { status: 202 });
+        }
+        return new Response("{}", { status: 200 });
+      })
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("on Modal because Kaggle was still installing", async () => {
+    backends = [
+      { ...kaggle(), wanCapabilities: [], wanNote: "it is still installing AI video (downloading the weights)" },
+      modal(),
+    ];
+    const job = await createAndDispatchClip({ prompt: "a fox", source: "studio" }, "https://app.test");
+    expect(job.backend).toBe("modal");
+    expect(job.clip?.skipped).toEqual(["Kaggle: still installing AI video (downloading the weights)"]);
+  });
+
+  it("on Modal because Kaggle ran out of memory, kept with the job", async () => {
+    backends = [kaggle(), modal()];
+    const job = await createAndDispatchClip({ prompt: "a fox", source: "studio" }, "https://app.test");
+    expect(job.clip?.skipped).toBeUndefined();
+    const moved = await completeClip(job, { status: "error", error: "CUDA out of memory. Tried to allocate 108 MiB" });
+    expect(moved.backend).toBe("modal");
+    expect(moved.clip?.skipped).toEqual(["Kaggle: failed (ran out of GPU memory)"]);
   });
 });

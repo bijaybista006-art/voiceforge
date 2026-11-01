@@ -33,6 +33,18 @@ def gpu_name() -> str:
     return torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
 
 
+def peak_vram_gb() -> Optional[float]:
+    """The most GPU memory this process has held, so a log shows real numbers."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return round(torch.cuda.max_memory_allocated() / 1e9, 2)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def load_pipeline(model_path: str, profile: Dict[str, Any]):
     """Load (or reuse) the pipeline for this profile. Returns (pipe, load_seconds)."""
     key = json.dumps([model_path, profile], sort_keys=True)
@@ -141,7 +153,8 @@ def main(request_path: str) -> int:
             pipe, req["settings"], req["out_path"],
             on_progress=lambda step, total: _emit(event="progress", step=step, total=total),
         )
-        _emit(event="done", load_seconds=load_seconds, gen_seconds=gen_seconds, gpu=gpu_name())
+        _emit(event="done", load_seconds=load_seconds, gen_seconds=gen_seconds, gpu=gpu_name(),
+              peak_vram_gb=peak_vram_gb())
         return 0
     except Exception as e:  # noqa: BLE001 - reported to the service, which reports it to the gateway
         _emit(event="error", error=str(e)[:900])

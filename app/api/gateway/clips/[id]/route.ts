@@ -35,5 +35,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
     gen_seconds: job.genSeconds ?? null,
     settings: job.clip?.settings ?? null,
     error: job.error ?? null,
+    // Why the free GPUs did not make it, when it ran elsewhere.
+    skipped: job.clip?.skipped ?? [],
   });
 }

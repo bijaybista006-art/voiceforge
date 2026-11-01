@@ -10,7 +10,10 @@ import {
   useClipStatus,
   type ClipJob,
 } from "@/lib/clipClient";
+import { confirmAction } from "@/lib/confirm";
+import { PROVIDER_LABEL } from "@/lib/routingView";
 import { toast } from "@/lib/toast";
+import type { BackendProvider } from "@/lib/types";
 import { Badge } from "../ui/Badge";
 import { Button } from "../ui/Button";
 import { Card, CardHeader } from "../ui/Card";
@@ -39,6 +42,17 @@ type Aspect = "landscape" | "vertical";
  */
 export function ClipView() {
   const { status, failed, reload } = useClipStatus();
+  const waitingForFree = !!status && (!status.ready || (!!status.paid && (status.skipped ?? []).some((x) => x.coming)));
+  // reload is a new function each render; keep the latest without restarting the timer.
+  const reloadRef = useRef(reload);
+  reloadRef.current = reload;
+  useEffect(() => {
+    if (!waitingForFree) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") reloadRef.current();
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [waitingForFree]);
   const isAdmin = useIsAdmin();
 
   const [prompt, setPrompt] = useState("");
@@ -127,6 +141,16 @@ export function ClipView() {
 
   async function generate() {
     if (blocker) return;
+    // Never use the paid GPU silently while a free one is on its way.
+    const coming = status?.paid ? (status.skipped ?? []).filter((x) => x.coming) : [];
+    if (coming.length) {
+      const ok = await confirmAction({
+        title: `Use ${providerName(status?.provider)} (paid) for this clip?`,
+        body: `${coming.map((x) => `${providerName(x.provider)}: ${x.reason}`).join(". ")}. You can wait for it instead: this page checks again every 30 seconds.`,
+        confirmLabel: `Use ${providerName(status?.provider)}`,
+      });
+      if (!ok) return;
+    }
     setStarting(true);
     try {
       const job = await startClip({
@@ -242,6 +266,8 @@ export function ClipView() {
                   </p>
                 )}
               </Card>
+            ) : status?.ready && status.paid ? (
+              <PaidNotice status={status} />
             ) : isAdmin && status?.also ? (
               <p className="text-[12.5px] text-muted">Also: {status.also}</p>
             ) : null}
@@ -463,9 +489,13 @@ export function ClipView() {
                     <CopyId id={clip.video_url} label="Link" />
                   </div>
                   <ClipFacts clip={clip} />
+                  <RoutedNote clip={clip} />
                 </>
               ) : (
-                <ClipProgress clip={clip} startedAt={startedAt} now={now} />
+                <>
+                  <ClipProgress clip={clip} startedAt={startedAt} now={now} />
+                  <RoutedNote clip={clip} />
+                </>
               )}
             </Card>
 
@@ -546,6 +576,52 @@ function ClipProgress({ clip, startedAt, now }: { clip: ClipJob; startedAt: numb
 }
 
 /** What the clip is, in numbers — enough to make it again. */
+function providerName(p: string | undefined | null): string {
+  return (p && PROVIDER_LABEL[p as BackendProvider]) || p || "another GPU";
+}
+
+/** Before generating: this would run on the paid GPU, and why the free ones can't. */
+function PaidNotice({ status }: { status: NonNullable<ReturnType<typeof useClipStatus>["status"]> }) {
+  const skipped = status.skipped ?? [];
+  const coming = skipped.some((x) => x.coming);
+  return (
+    <div
+      data-testid="paid-notice"
+      className="rounded-2xl border border-live/30 bg-liveSoft px-5 py-4 text-[13px] leading-relaxed text-ink"
+    >
+      <p className="font-semibold">
+        The next clip will run on {providerName(status.provider)}, which is paid.
+      </p>
+      {skipped.length ? (
+        <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-muted">
+          {skipped.map((x) => (
+            <li key={x.provider}>
+              <span className="font-medium text-ink">{providerName(x.provider)}</span>: {x.reason}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-muted">No free GPU (Colab or Kaggle) is running.</p>
+      )}
+      {coming ? (
+        <p className="mt-1.5 text-muted">
+          Wait and it switches to the free GPU by itself once it is ready; this page checks every 30 seconds.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** After: where it ran, and why not on the free GPUs. */
+function RoutedNote({ clip }: { clip: ClipJob }) {
+  if (!clip.skipped?.length) return null;
+  return (
+    <p className="mt-3 text-[12px] leading-relaxed text-muted" data-testid="routed-note">
+      Made on {providerName(clip.backend)} because {clip.skipped.join("; ")}.
+    </p>
+  );
+}
+
 function ClipFacts({ clip }: { clip: ClipJob }) {
   const isAdmin = useIsAdmin();
   const s = clip.settings;

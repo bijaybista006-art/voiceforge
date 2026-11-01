@@ -13,6 +13,10 @@ import { useCallback, useEffect, useState } from "react";
 export interface ClipReadiness {
   ready: boolean;
   provider?: string;
+  /** True when the clip would run on a paid backend (Modal). */
+  paid?: boolean;
+  /** Free GPUs that cannot take it right now: `coming` = installing / not reported yet. */
+  skipped?: Array<{ provider: string; reason: string; coming: boolean }>;
   reason?: string;
   also?: string;
   /** What the backend that would take the clip advertised (backend/wan/settings.py). */
@@ -46,6 +50,8 @@ export interface ClipJob {
   gen_seconds: number | null;
   settings: ClipSettings | null;
   error: string | null;
+  /** Why the free GPUs did not make it, when it ran elsewhere. */
+  skipped?: string[];
 }
 
 export interface ClipRequest {

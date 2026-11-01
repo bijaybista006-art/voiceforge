@@ -17,6 +17,7 @@ import {
   isValidRegistrationToken,
   registerBackend,
 } from "@/lib/server/backends";
+import { heartbeatFields } from "@/lib/server/clipjobs";
 import { isRedisConfigured } from "@/lib/server/redis";
 
 export const runtime = "nodejs";
@@ -29,6 +30,33 @@ const schema = z.object({
   gpu: z.string().max(120).optional(),
   models: z.array(z.string().max(60)).max(20).optional(),
   version: z.string().max(40).optional(),
+  // Newer notebooks: AI video install state, free disk and GPU memory, sent
+  // with every heartbeat (backend_status in backend/voiceforge_server.py).
+  status: z
+    .object({
+      wan: z
+        .object({
+          state: z.string().max(40).optional(),
+          capabilities: z.array(z.string().max(60)).max(10).optional(),
+          install: z
+            .object({ state: z.string().max(40).optional(), stage: z.string().max(200).optional(), error: z.string().max(1000).optional() })
+            .nullable()
+            .optional(),
+          limits: z.record(z.unknown()).nullable().optional(),
+        })
+        .optional(),
+      system: z
+        .object({
+          disk_free_gb: z.number().optional(),
+          disk_total_gb: z.number().optional(),
+          gpus: z
+            .array(z.object({ name: z.string().max(80), used_mb: z.number(), total_mb: z.number() }))
+            .max(8)
+            .optional(),
+        })
+        .optional(),
+    })
+    .optional(),
 });
 
 function token(req: NextRequest): string | null {
@@ -65,7 +93,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "backend url must be https" }, { status: 400 });
   }
 
-  const row = await registerBackend(body);
+  const { status, ...registration } = body;
+  const row = await registerBackend(registration, { extra: heartbeatFields(registration.url, status) });
   return NextResponse.json({
     ok: true,
     provider: row.provider,
