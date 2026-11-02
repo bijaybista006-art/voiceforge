@@ -67,6 +67,8 @@ export function computeHealth(b: RegisteredBackend, now = Date.now()): BackendHe
   // zero, so "quiet" is its normal state. Expiring them would silently remove
   // the fallback you added precisely for when the notebooks are down.
   if (b.selfRegistered !== false) {
+    // It said goodbye: it stopped itself after sitting idle.
+    if (b.stoppedIdleAt && b.stoppedIdleAt >= b.lastHeartbeat) return "offline";
     const age = (now - b.lastHeartbeat) / 1000;
     if (age > OFFLINE_AFTER_SECONDS) return "offline";
     return b.busy ? "busy" : "online";

@@ -313,7 +313,9 @@ export interface HeartbeatStatus {
     install?: { state?: string; stage?: string; error?: string } | null;
     limits?: Record<string, unknown> | null;
   };
+  stopping?: boolean;
   system?: {
+    idle_seconds?: number;
     disk_free_gb?: number;
     disk_total_gb?: number;
     gpus?: Array<{ name: string; used_mb: number; total_mb: number }>;
@@ -341,12 +343,19 @@ export function heartbeatFields(url: string, status: HeartbeatStatus | undefined
   if (status.system) {
     out.system = {
       at: now,
+      ...(typeof status.system.idle_seconds === "number" ? { idleSeconds: Math.round(status.system.idle_seconds) } : {}),
       ...(typeof status.system.disk_free_gb === "number" ? { diskFreeGb: status.system.disk_free_gb } : {}),
       ...(typeof status.system.disk_total_gb === "number" ? { diskTotalGb: status.system.disk_total_gb } : {}),
       ...(status.system.gpus?.length
         ? { gpus: status.system.gpus.slice(0, 4).map((g) => ({ name: g.name, usedMb: g.used_mb, totalMb: g.total_mb })) }
         : {}),
     };
+  }
+  if (status.stopping) {
+    // Its goodbye: no heartbeat from now on, so it shows Offline at once
+    // (computeHealth) rather than after the usual three missed beats.
+    out.stoppedIdleAt = now;
+    out.lastHeartbeat = now; // the same instant, so computeHealth sees the goodbye as the latest word
   }
   return out;
 }

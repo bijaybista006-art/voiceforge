@@ -25,6 +25,12 @@ function backend(patch: Partial<RegisteredBackend> = {}): RegisteredBackend {
 const NOW = 1_700_000_000_000;
 
 describe("computeHealth", () => {
+  it("a notebook that stopped itself while idle is offline at once, and online again when it restarts", () => {
+    expect(computeHealth(backend({ lastHeartbeat: NOW, stoppedIdleAt: NOW }), NOW)).toBe("offline");
+    // A new session heartbeats after the goodbye: that later word wins.
+    expect(computeHealth(backend({ lastHeartbeat: NOW + 1000, stoppedIdleAt: NOW }), NOW + 1000)).toBe("online");
+  });
+
   it("is online right after a heartbeat", () => {
     expect(computeHealth(backend({ lastHeartbeat: NOW }), NOW)).toBe("online");
   });

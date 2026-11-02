@@ -29,7 +29,7 @@ def _server_functions(*names, **scope):
     fns = [n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name in names]
     from typing import Any, Dict, Optional
 
-    env = {"os": os, "shutil": shutil, "Any": Any, "Dict": Dict, "Optional": Optional, **scope}
+    env = {"os": os, "shutil": shutil, "Any": Any, "Dict": Dict, "Optional": Optional, "idle_seconds": lambda: 0, **scope}
     exec(compile(ast.Module(body=fns, type_ignores=[]), "voiceforge_server.py", "exec"), env)
     return env
 

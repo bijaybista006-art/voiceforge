@@ -168,6 +168,16 @@ _GPU_LOCK = threading.Lock()  # one generation at a time: a single GPU
 # T4 x2 both run on the second GPU, and loading both at once ran it out of
 # memory. Lock order everywhere: an engine's own lock, this, then _GPU_LOCK.
 _ENGINE_LOCK = threading.Lock()
+
+# When this backend last did (or was asked to do) real work. A notebook uses
+# it to stop itself after a stretch of doing nothing, so a forgotten tab does
+# not keep spending the free GPU allowance (see notebook_runner.py). Health
+# checks do not count; any other request, and anything still running, does.
+_LAST_WORK = [time.time()]
+
+
+def note_work() -> None:
+    _LAST_WORK[0] = time.time()
 _LOAD_LOCK = threading.Lock()  # one model load at a time; see engine_available
 _BUSY = False
 
@@ -1930,6 +1940,7 @@ WAN_FILES = ("__init__.py", "settings.py", "engine.py", "install.py", "service.p
 
 # The mounted AI video service, when this notebook runs one (see create_app).
 _WAN_SERVICE = None
+_PRESENTER_SERVICE = None
 
 
 def system_report(path: str = "/") -> Dict[str, Any]:
@@ -1960,6 +1971,32 @@ def system_report(path: str = "/") -> Dict[str, Any]:
     return out
 
 
+def busy_now() -> bool:
+    """Anything running right now: narration, a long render, a presenter clip,
+    an AI video clip, or a job waiting for the GPU."""
+    if _GPU_LOCK.locked() or _ENGINE_LOCK.locked():
+        return True
+    with _JOB_LOCK:
+        if any(j.get("status") in ("queued", "running") for j in JOBS.values()):
+            return True
+    for service in (_PRESENTER_SERVICE, _WAN_SERVICE):
+        renders = getattr(service, "RENDERS", None) or {}
+        try:
+            if any(j.get("status") in ("queued", "running") for j in list(renders.values())):
+                return True
+        except Exception:  # noqa: BLE001
+            pass
+    return False
+
+
+def idle_seconds(now: Optional[float] = None) -> int:
+    """Seconds since the last real work; 0 while anything is running."""
+    if busy_now():
+        note_work()
+        return 0
+    return max(0, int((now or time.time()) - _LAST_WORK[0]))
+
+
 def backend_status() -> Dict[str, Any]:
     """What a notebook tells the app on every heartbeat, beyond "I am alive".
 
@@ -1970,7 +2007,7 @@ def backend_status() -> Dict[str, Any]:
     each heartbeat, so the app always knows: off, installing (which step),
     failed (why), or ready.
     """
-    status: Dict[str, Any] = {"system": system_report()}
+    status: Dict[str, Any] = {"system": {**system_report(), "idle_seconds": idle_seconds()}}
     if os.environ.get("VOICEFORGE_WAN", "0") != "1":
         status["wan"] = {"state": "off", "capabilities": []}
     elif _WAN_SERVICE is not None:
@@ -2042,6 +2079,13 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
         CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"]
     )
 
+    @app.middleware("http")
+    async def _count_work(request, call_next):
+        # Health checks (the app's, and keep-awake pings) are not work.
+        if not request.url.path.rstrip("/").endswith("/health"):
+            note_work()
+        return await call_next(request)
+
     def _check(secret: Optional[str]) -> None:
         expected = os.environ.get("BACKEND_SECRET")
         # If no secret is configured the backend is open — acceptable for a
@@ -2076,6 +2120,8 @@ def create_app(provider: str = "custom", with_render: bool = True) -> FastAPI:
     if provider in ("colab", "kaggle") and os.environ.get("VOICEFORGE_PRESENTER", "1") != "0":
         try:
             presenter = _load_presenter_module()
+            global _PRESENTER_SERVICE
+            _PRESENTER_SERVICE = presenter
             app.include_router(
                 presenter.create_presenter_router(
                     _check,

@@ -202,10 +202,14 @@ export interface RegisteredBackend extends BackendRegistration {
   clipsEnabled?: boolean;
   /** Disk and GPU memory, from a notebook's last heartbeat. */
   system?: BackendSystem;
+  /** Set when a notebook stopped itself after sitting idle (Admin -> Settings). */
+  stoppedIdleAt?: number;
 }
 
 export interface BackendSystem {
   at: number;
+  /** Seconds since it last did any work; 0 while working. */
+  idleSeconds?: number;
   diskFreeGb?: number;
   diskTotalGb?: number;
   gpus?: Array<{ name: string; usedMb: number; totalMb: number }>;

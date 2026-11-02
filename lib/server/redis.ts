@@ -57,6 +57,11 @@ export interface PlatformSettings {
   colabNotebookUrl: string;
   /** The dedicated Google account the Colab buttons open in (Google's `authuser`). */
   googleAccount: string;
+  /**
+   * Minutes a Colab/Kaggle notebook may sit with nothing to do before it
+   * stops itself (and, on Colab, gives the GPU back). 0 = never.
+   */
+  notebookIdleStopMinutes: number;
   defaultModel: "chatterbox" | "qwen3";
   defaultLanguage: string;
   /** English words and how to write them so the model says them right. */
@@ -88,6 +93,7 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   kaggleNotebookUrl: "",
   colabNotebookUrl: "",
   googleAccount: "",
+  notebookIdleStopMinutes: 30,
   defaultModel: "chatterbox",
   defaultLanguage: "en",
   pronunciations: {},

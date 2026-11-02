@@ -404,6 +404,12 @@ describe("free GPUs first, and never a silent paid clip", () => {
     expect(heartbeatFields("https://k.x", undefined)).toEqual({});
   });
 
+  it("a goodbye heartbeat marks the notebook stopped, at the same instant as the beat", () => {
+    const f = heartbeatFields("https://k.x", { stopping: true, system: { idle_seconds: 1800 } }, 5000);
+    expect(f).toMatchObject({ stoppedIdleAt: 5000, lastHeartbeat: 5000, system: { idleSeconds: 1800 } });
+    expect(heartbeatFields("https://k.x", { system: { idle_seconds: 0 } }, 5000).stoppedIdleAt).toBeUndefined();
+  });
+
   it("puts a failure in a few words", () => {
     expect(failNote("CUDA out of memory. Tried to allocate 108.00 MiB")).toBe("ran out of GPU memory");
     expect(failNote("GPU_OUT_OF_MEMORY: at 832x480")).toBe("ran out of GPU memory");
