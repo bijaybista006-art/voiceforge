@@ -256,14 +256,14 @@ lib.trainingChecks.ts (1-185)
   .checkTranscript (167-181) :: Does the transcript plausibly match the audio's length?
   .blocks (183-185)
 
-lib.trainingPrompts.ts (1-845)
-  .NE (28-718)
-  .EN (720-780)
-  .numbered (787-798) :: Number the sentences
-  .TRAINING_PROMPTS (800-803)
-  .PRIORITY (810-822) :: Recorded first:
-  .recordingOrder (825-830) :: The sentences in recording order:
-  .nextPrompt (833-845) :: The first prompt not yet recorded, in recording order, starting after…
+lib.trainingPrompts.ts (1-998)
+  .NE (28-870) :: Nepali prompts; ne-592..729 names/English words first
+  .EN (872-932)
+  .numbered (939-950) :: Number the sentences
+  .TRAINING_PROMPTS (952-955)
+  .PRIORITY (962-975) :: Recorded first:
+  .recordingOrder (978-983) :: The sentences in recording order:
+  .nextPrompt (986-998) :: The first prompt not yet recorded, in recording order, starting after…
 
 lib.types.ts (1-370)
   .Voice (3-17)
