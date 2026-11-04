@@ -59,7 +59,11 @@ export interface PlatformSettings {
   googleAccount: string;
   /**
    * Minutes a Colab/Kaggle notebook may sit with nothing to do before it
-   * stops itself (and, on Colab, gives the GPU back). 0 = never.
+   * stops itself (and, on Colab, gives the GPU back). 0 = never. 30 stopped
+   * both platforms mid-session with nothing actually wrong (Nov 2026): a gap
+   * between jobs looks the same as "forgotten tab" at that length, so 120 is
+   * the default now — the notebook still protects free GPU hours, just not
+   * during an ordinary pause.
    */
   notebookIdleStopMinutes: number;
   defaultModel: "chatterbox" | "qwen3";
@@ -93,7 +97,7 @@ export const DEFAULT_SETTINGS: PlatformSettings = {
   kaggleNotebookUrl: "",
   colabNotebookUrl: "",
   googleAccount: "",
-  notebookIdleStopMinutes: 30,
+  notebookIdleStopMinutes: 120,
   defaultModel: "chatterbox",
   defaultLanguage: "en",
   pronunciations: {},
